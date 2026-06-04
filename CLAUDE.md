@@ -112,9 +112,13 @@ Batch export also defaults to JPEG (`SelectedIndex = 0` on the format ComboBox).
 
 **`train.py`** — standard training loop with EMA (decay=0.9999). `best.pt` saves EMA weights only; `last.pt` saves everything for resuming. Use `--resume` to continue an interrupted run.
 
-### ImageSharp version constraint
+### Dependencies
 
-The project pins `SixLabors.ImageSharp` to `3.x` (the last free version). Version 4+ requires a paid commercial license. Do not upgrade beyond `3.x`.
+The project uses only **MIT-licensed / Windows built-in** libraries:
+- `Microsoft.ML.OnnxRuntime` (MIT) — ONNX model inference
+- WPF + .NET 8 (Windows) — UI and image I/O
+
+ImageSharp was removed. The app is commercially safe with no paid license requirements.
 
 ### Model deployment
 
