@@ -5,7 +5,7 @@
 #define MyAppName    "LumaPhoto"
 #define MyAppVersion "1.0"
 #define MyAppPublisher "LumaPhoto"
-#define MyAppURL     "https://github.com/YOUR_USERNAME/LumaPhoto"
+#define MyAppURL     "https://github.com/janidudasith-cyber/LumaPhoto"
 #define MyAppExe     "LumaPhoto.exe"
 #define SourceDir    "publish"
 
