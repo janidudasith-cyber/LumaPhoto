@@ -1,0 +1,973 @@
+<Window x:Class="LumaPhoto.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:LumaPhoto"
+        Title="Luma — Photo Editor"
+        MinWidth="900" MinHeight="600"
+        Width="1200" Height="760"
+        Background="#0D0D0F"
+        WindowStyle="SingleBorderWindow"
+        AllowDrop="True"
+        KeyDown="Window_KeyDown">
+
+    <Window.Resources>
+        <!-- Dark themed tooltips (shown on hover after a short delay) -->
+        <Style TargetType="ToolTip">
+            <Setter Property="Background"  Value="#202026"/>
+            <Setter Property="Foreground"  Value="#F0F0F2"/>
+            <Setter Property="BorderBrush" Value="#3A3A48"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize"    Value="12"/>
+            <Setter Property="Padding"     Value="9,5"/>
+            <Setter Property="HasDropShadow" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToolTip">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="7" Padding="{TemplateBinding Padding}">
+                            <Border.Effect>
+                                <DropShadowEffect Color="Black" Opacity="0.55" BlurRadius="14" ShadowDepth="2"/>
+                            </Border.Effect>
+                            <ContentPresenter/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Button base style -->
+        <Style x:Key="DarkBtn" TargetType="Button">
+            <Setter Property="Background"   Value="#28282F"/>
+            <Setter Property="Foreground"   Value="#F0F0F2"/>
+            <Setter Property="BorderBrush"  Value="#2A2A33"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding"      Value="12,0"/>
+            <Setter Property="Height"       Value="32"/>
+            <Setter Property="FontSize"     Value="13"/>
+            <Setter Property="FontWeight"   Value="Medium"/>
+            <Setter Property="Cursor"       Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="7" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="BorderBrush" Value="#3A3A48"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Opacity" Value="0.7"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryBtn" TargetType="Button" BasedOn="{StaticResource DarkBtn}">
+            <Setter Property="Background"  Value="#0A84FF"/>
+            <Setter Property="BorderBrush" Value="#0A84FF"/>
+            <Setter Property="Foreground"  Value="White"/>
+        </Style>
+
+        <Style x:Key="GreenBtn" TargetType="Button" BasedOn="{StaticResource DarkBtn}">
+            <Setter Property="Background"  Value="#30D158"/>
+            <Setter Property="BorderBrush" Value="#30D158"/>
+            <Setter Property="Foreground"  Value="#071008"/>
+            <Setter Property="FontWeight"  Value="SemiBold"/>
+        </Style>
+
+        <Style x:Key="TabBtn" TargetType="ToggleButton">
+            <Setter Property="Background"       Value="Transparent"/>
+            <Setter Property="BorderThickness"  Value="0"/>
+            <Setter Property="Foreground"       Value="#8E8EA0"/>
+            <Setter Property="FontSize"         Value="13"/>
+            <Setter Property="FontWeight"       Value="Medium"/>
+            <Setter Property="Height"           Value="34"/>
+            <Setter Property="Cursor"           Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="brd" Background="{TemplateBinding Background}"
+                                CornerRadius="7,7,0,0" Padding="8,0">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="brd" Property="Background" Value="#202026"/>
+                                <Setter Property="Foreground" Value="#F0F0F2"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="#F0F0F2"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Slider style -->
+        <Style x:Key="EditSlider" TargetType="Slider">
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid>
+                            <Border Height="3" CornerRadius="2" Background="#28282F" VerticalAlignment="Center"/>
+                            <Track x:Name="PART_Track">
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Ellipse Width="14" Height="14" Fill="#0A84FF"/>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="IntensitySlider" TargetType="Slider">
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid>
+                            <Border Height="4" CornerRadius="2" Background="#28282F" VerticalAlignment="Center"/>
+                            <Track x:Name="PART_Track">
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Ellipse Width="20" Height="20" Fill="White"/>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SectionLabel" TargetType="TextBlock">
+            <Setter Property="FontSize"      Value="10"/>
+            <Setter Property="FontWeight"    Value="SemiBold"/>
+            <Setter Property="Foreground"    Value="#55556A"/>
+            <Setter Property="Margin"        Value="0,8,0,4"/>
+        </Style>
+
+        <Style x:Key="MutedText" TargetType="TextBlock">
+            <Setter Property="FontSize"  Value="12"/>
+            <Setter Property="Foreground" Value="#8E8EA0"/>
+        </Style>
+
+        <Style x:Key="ToolBtn" TargetType="Button" BasedOn="{StaticResource DarkBtn}">
+            <Setter Property="Background" Value="#202026"/>
+            <Setter Property="Height" Value="64"/>
+            <Setter Property="Padding" Value="4"/>
+        </Style>
+
+        <Style x:Key="MarkupToolBtn" TargetType="ToggleButton">
+            <Setter Property="Background"   Value="#202026"/>
+            <Setter Property="BorderBrush"  Value="#2A2A33"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground"   Value="#F0F0F2"/>
+            <Setter Property="Height"       Value="64"/>
+            <Setter Property="Cursor"       Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="brd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="brd" Property="Background" Value="#0D1E33"/>
+                                <Setter TargetName="brd" Property="BorderBrush" Value="#0A84FF"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ComboBox dark style — full template so selection + popup are properly styled -->
+        <Style x:Key="DarkCombo" TargetType="ComboBox">
+            <Setter Property="Background"        Value="#202026"/>
+            <Setter Property="BorderBrush"       Value="#2A2A33"/>
+            <Setter Property="Foreground"        Value="#F0F0F2"/>
+            <Setter Property="Height"            Value="34"/>
+            <Setter Property="FontSize"          Value="13"/>
+            <Setter Property="Cursor"            Value="Hand"/>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ComboBoxItem">
+                        <Setter Property="Foreground" Value="#F0F0F2"/>
+                        <Setter Property="FontSize"   Value="13"/>
+                        <Setter Property="Padding"    Value="12,8"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ComboBoxItem">
+                                    <Border x:Name="brd"
+                                            Background="Transparent"
+                                            CornerRadius="7"
+                                            Margin="5,2"
+                                            Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="brd" Property="Background" Value="#2A2A3A"/>
+                                        </Trigger>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="brd" Property="Background" Value="#1A3A5C"/>
+                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                        </Trigger>
+                                        <MultiTrigger>
+                                            <MultiTrigger.Conditions>
+                                                <Condition Property="IsSelected"   Value="True"/>
+                                                <Condition Property="IsMouseOver"  Value="True"/>
+                                            </MultiTrigger.Conditions>
+                                            <Setter TargetName="brd" Property="Background" Value="#1F4570"/>
+                                        </MultiTrigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid x:Name="templateRoot">
+                            <!-- Closed-state visual -->
+                            <Border x:Name="mainBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8">
+                                <Grid Margin="10,0,2,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="26"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ContentPresenter x:Name="contentSite"
+                                                      Content="{TemplateBinding SelectionBoxItem}"
+                                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                      ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                                      VerticalAlignment="Center"
+                                                      IsHitTestVisible="False"
+                                                      TextElement.Foreground="#F0F0F2"/>
+                                    <Path x:Name="arrow" Grid.Column="1"
+                                          Data="M 0 0 L 5 5 L 10 0"
+                                          Stroke="#8E8EA0" StrokeThickness="1.5"
+                                          Fill="Transparent"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          StrokeLineJoin="Round"
+                                          IsHitTestVisible="False"/>
+                                </Grid>
+                            </Border>
+                            <!-- Transparent toggle to capture clicks -->
+                            <ToggleButton x:Name="toggleButton"
+                                          Background="Transparent" BorderThickness="0"
+                                          Focusable="False" ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay,
+                                                      RelativeSource={RelativeSource TemplatedParent}}"/>
+                            <!-- Dropdown popup -->
+                            <Popup x:Name="PART_Popup"
+                                   AllowsTransparency="True"
+                                   IsOpen="{Binding IsDropDownOpen,
+                                            RelativeSource={RelativeSource TemplatedParent}}"
+                                   Placement="Bottom"
+                                   PopupAnimation="Fade"
+                                   Focusable="False">
+                                <Border Background="#202026"
+                                        BorderBrush="#3A3A4A"
+                                        BorderThickness="1"
+                                        CornerRadius="12"
+                                        Margin="0,4,0,0">
+                                    <Border.Effect>
+                                        <DropShadowEffect Color="#000000" Opacity="0.55"
+                                                          BlurRadius="20" ShadowDepth="6" Direction="270"/>
+                                    </Border.Effect>
+                                    <ScrollViewer MaxHeight="260"
+                                                  VerticalScrollBarVisibility="Auto"
+                                                  Padding="0,5">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsDropDownOpen" Value="True">
+                                <Setter TargetName="mainBorder" Property="BorderBrush" Value="#0A84FF"/>
+                                <Setter TargetName="arrow" Property="Data" Value="M 0 5 L 5 0 L 10 5"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.35"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="mainBorder" Property="BorderBrush" Value="#3A3A48"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ScrollViewer -->
+        <Style x:Key="DarkScroll" TargetType="ScrollViewer">
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="52"/>  <!-- Topbar -->
+            <RowDefinition Height="*"/>   <!-- Workspace -->
+        </Grid.RowDefinitions>
+
+        <!-- ── TOPBAR ── -->
+        <Border Grid.Row="0" Background="#111114" BorderThickness="0,0,0,1" BorderBrush="#1A1A1F">
+            <DockPanel Margin="16,0" LastChildFill="False">
+                <!-- Brand -->
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <Border Width="30" Height="30" CornerRadius="8" Margin="0,0,9,0">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#0A84FF" Offset="0"/>
+                                <GradientStop Color="#30D158" Offset="0.5"/>
+                                <GradientStop Color="#FF9F0A" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
+                    <TextBlock Text="Luma" Foreground="#F0F0F2" FontSize="16" FontWeight="SemiBold"
+                               VerticalAlignment="Center" Margin="0,0,16,0"/>
+                    <TextBlock x:Name="FileMetaText" Text="" Foreground="#8E8EA0" FontSize="12"
+                               VerticalAlignment="Center" MaxWidth="480"
+                               TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+
+                <!-- Actions (right) -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="0" >
+                    <Button x:Name="HamburgerBtn" Style="{StaticResource DarkBtn}" Width="36" Padding="0"
+                            Click="HamburgerBtn_Click" Margin="0,0,4,0" ToolTip="Toggle inspector panel">
+                        ☰
+                    </Button>
+                    <Button x:Name="BatchBtn" Style="{StaticResource DarkBtn}"
+                            Click="BatchBtn_Click" IsEnabled="False" Margin="6,0,0,0"
+                            ToolTip="Batch export — apply current settings to a folder of photos  (Ctrl+Shift+S)">
+                        ⊞ Batch
+                    </Button>
+                    <Button x:Name="ExportBtn" Style="{StaticResource GreenBtn}"
+                            Click="ExportBtn_Click" IsEnabled="False" Margin="6,0,0,0"
+                            ToolTip="Export the edited photo  (Ctrl+S)">
+                        Export
+                    </Button>
+                    <Button x:Name="UndoBtn" Style="{StaticResource DarkBtn}" Width="32" Padding="0"
+                            Click="UndoBtn_Click" IsEnabled="False" Margin="6,0,0,0" ToolTip="Undo  (Ctrl+Z)">
+                        ↩
+                    </Button>
+                    <Button x:Name="RedoBtn" Style="{StaticResource DarkBtn}" Width="32" Padding="0"
+                            Click="RedoBtn_Click" IsEnabled="False" Margin="3,0,0,0" ToolTip="Redo  (Ctrl+Y)">
+                        ↪
+                    </Button>
+                    <Button x:Name="RevertBtn" Style="{StaticResource DarkBtn}"
+                            Click="RevertBtn_Click" IsEnabled="False" Margin="6,0,0,0"
+                            ToolTip="Revert to original photo (undoes all crops and transforms)">
+                        ⬅ Revert
+                    </Button>
+                    <Button x:Name="CompareBtn" Style="{StaticResource DarkBtn}"
+                            PreviewMouseDown="CompareBtn_MouseDown" PreviewMouseUp="CompareBtn_MouseUp"
+                            IsEnabled="False" Margin="6,0,0,0"
+                            ToolTip="Press and hold to view the original">
+                        ◐  Compare
+                    </Button>
+                    <Button x:Name="SplitViewBtn" Style="{StaticResource DarkBtn}"
+                            Click="SplitViewBtn_Click" IsEnabled="False" Margin="6,0,0,0"
+                            ToolTip="Side-by-side before / after (click to toggle)">
+                        ⊢  Split
+                    </Button>
+                    <Button x:Name="PresetsBtn" Style="{StaticResource DarkBtn}"
+                            Click="PresetsBtn_Click" IsEnabled="False" Margin="6,0,0,0"
+                            ToolTip="Quick export presets">
+                        ↓ Presets
+                    </Button>
+                    <Button x:Name="FullScreenBtn" Style="{StaticResource DarkBtn}"
+                            Click="FullScreenBtn_Click" Width="32" Padding="0" Margin="6,0,0,0"
+                            ToolTip="Toggle full-screen (F11)">
+                        ⛶
+                    </Button>
+                    <Button x:Name="OpenBtn" Style="{StaticResource PrimaryBtn}"
+                            Click="OpenBtn_Click" Margin="6,0,0,0"
+                            ToolTip="Open a photo  (Ctrl+O)">
+                        + Open
+                    </Button>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- ── WORKSPACE ── -->
+        <Grid Grid.Row="1" x:Name="WorkspaceGrid">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="292"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- ── CANVAS STAGE + FILMSTRIP ── -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition x:Name="FilmstripRowDef" Height="0"/>
+                </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" x:Name="StageGrid" Background="#111114"
+                  ClipToBounds="True"
+                  AllowDrop="True" Drop="Stage_Drop" DragOver="Stage_DragOver"
+                  MouseWheel="Stage_MouseWheel"
+                  MouseLeftButtonDown="Stage_MouseLeftButtonDown"
+                  MouseMove="Stage_PanMove"
+                  MouseLeftButtonUp="Stage_PanEnd">
+
+                <!-- Empty state (not part of zoom group) -->
+                <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Border Width="72" Height="72" CornerRadius="18" Background="#202026"
+                            BorderBrush="#2A2A33" BorderThickness="1" HorizontalAlignment="Center">
+                        <TextBlock Text="🖼" FontSize="32" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="Drop a photo here" Foreground="#F0F0F2" FontSize="18" FontWeight="Medium"
+                               HorizontalAlignment="Center" Margin="0,14,0,0"/>
+                    <TextBlock Text="Supports JPG, PNG, WebP, BMP — or click Open to browse"
+                               Foreground="#8E8EA0" FontSize="13" HorizontalAlignment="Center"
+                               Margin="0,8,0,0" TextAlignment="Center"/>
+                    <Button Style="{StaticResource PrimaryBtn}" Content="Choose Photo"
+                            Click="OpenBtn_Click" HorizontalAlignment="Center"
+                            Height="36" Padding="18,0" Margin="0,16,0,0"/>
+                </StackPanel>
+
+                <!-- Zoom group — all image layers transform together -->
+                <Grid x:Name="ImageZoomGroup">
+
+                <!-- Photo display -->
+                <Image x:Name="PhotoDisplay" Stretch="Uniform" Visibility="Collapsed"
+                       RenderOptions.BitmapScalingMode="HighQuality"
+                       MouseDown="PhotoDisplay_MouseDown"/>
+
+                <!-- Markup canvas overlay -->
+                <Canvas x:Name="MarkupCanvas" Visibility="Collapsed"
+                        MouseDown="Markup_MouseDown"
+                        Background="Transparent" Cursor="Cross"/>
+
+                <!-- Crop overlay -->
+                <Canvas x:Name="CropCanvas" Visibility="Collapsed" Background="Transparent">
+                    <Rectangle x:Name="CropDimOverlay" Fill="#88000000"/>
+                    <Border x:Name="CropBox" BorderBrush="White" BorderThickness="2"
+                            Background="Transparent" Cursor="SizeAll"
+                            MouseDown="CropBox_MouseDown">
+                        <!-- Rule-of-thirds lines -->
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition/><RowDefinition/><RowDefinition/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition/><ColumnDefinition/><ColumnDefinition/>
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="1" BorderThickness="1,0" BorderBrush="#55FFFFFF"/>
+                            <Border Grid.Row="1" BorderThickness="0,1" BorderBrush="#55FFFFFF"/>
+                        </Grid>
+                    </Border>
+                    <!-- Corner handles -->
+                    <Border x:Name="HandleNW" Width="14" Height="14" Background="#0A84FF" BorderBrush="White" BorderThickness="2" CornerRadius="2" Cursor="SizeNWSE" MouseDown="Handle_MouseDown"/>
+                    <Border x:Name="HandleNE" Width="14" Height="14" Background="#0A84FF" BorderBrush="White" BorderThickness="2" CornerRadius="2" Cursor="SizeNESW" MouseDown="Handle_MouseDown"/>
+                    <Border x:Name="HandleSW" Width="14" Height="14" Background="#0A84FF" BorderBrush="White" BorderThickness="2" CornerRadius="2" Cursor="SizeNESW" MouseDown="Handle_MouseDown"/>
+                    <Border x:Name="HandleSE" Width="14" Height="14" Background="#0A84FF" BorderBrush="White" BorderThickness="2" CornerRadius="2" Cursor="SizeNWSE" MouseDown="Handle_MouseDown"/>
+                    <!-- Side handles -->
+                    <Border x:Name="HandleN"  Width="14" Height="14" Background="#0A84FF" BorderBrush="White" BorderThickness="2" CornerRadius="2" Cursor="SizeNS"   MouseDown="Handle_MouseDown"/>
+                    <Border x:Name="HandleS"  Width="14" Height="14" Background="#0A84FF" BorderBrush="White" BorderThickness="2" CornerRadius="2" Cursor="SizeNS"   MouseDown="Handle_MouseDown"/>
+                    <Border x:Name="HandleE"  Width="14" Height="14" Background="#0A84FF" BorderBrush="White" BorderThickness="2" CornerRadius="2" Cursor="SizeWE"   MouseDown="Handle_MouseDown"/>
+                    <Border x:Name="HandleW"  Width="14" Height="14" Background="#0A84FF" BorderBrush="White" BorderThickness="2" CornerRadius="2" Cursor="SizeWE"   MouseDown="Handle_MouseDown"/>
+                </Canvas>
+                    <!-- Split-view overlay (before/after side-by-side) -->
+                    <Canvas x:Name="SplitCanvas" Visibility="Collapsed"
+                            Background="Transparent"
+                            MouseLeftButtonDown="SplitCanvas_MouseDown"
+                            MouseMove="SplitCanvas_MouseMove"
+                            MouseLeftButtonUp="SplitCanvas_MouseUp"
+                            MouseLeave="SplitCanvas_MouseLeave"/>
+                </Grid><!-- /ImageZoomGroup -->
+            </Grid><!-- /StageGrid -->
+
+            <!-- Filmstrip -->
+            <Border Grid.Row="1" x:Name="FilmstripBar" Background="#0A0A0C"
+                    BorderThickness="0,1,0,0" BorderBrush="#1A1A1F" Visibility="Collapsed"
+                    Height="96">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                              Background="#0A0A0C">
+                    <StackPanel x:Name="FilmstripPanel" Orientation="Horizontal" Margin="8,6,8,6"/>
+                </ScrollViewer>
+            </Border>
+
+            </Grid><!-- /canvas wrapper -->
+
+            <!-- ── INSPECTOR PANEL ── -->
+            <Border x:Name="InspectorBorder" Grid.Column="1" Background="#111114" BorderThickness="1,0,0,0" BorderBrush="#1A1A1F">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>  <!-- Tabs -->
+                        <RowDefinition Height="*"/>     <!-- Panel content -->
+                    </Grid.RowDefinitions>
+
+                    <!-- Tabs -->
+                    <Border Grid.Row="0" BorderThickness="0,0,0,1" BorderBrush="#1A1A1F" Background="#111114">
+                        <UniformGrid Columns="4" Margin="8,8,8,0">
+                            <ToggleButton x:Name="TabAdjust"  Content="Adjust"  Style="{StaticResource TabBtn}"
+                                          IsChecked="True"  Click="Tab_Click" Tag="Adjust"  FontSize="11"/>
+                            <ToggleButton x:Name="TabFilters" Content="Filters" Style="{StaticResource TabBtn}"
+                                          IsChecked="False" Click="Tab_Click" Tag="Filters" FontSize="11"/>
+                            <ToggleButton x:Name="TabCrop"    Content="Crop"    Style="{StaticResource TabBtn}"
+                                          IsChecked="False" Click="Tab_Click" Tag="Crop"    FontSize="11"/>
+                            <ToggleButton x:Name="TabMarkup"  Content="Markup"  Style="{StaticResource TabBtn}"
+                                          IsChecked="False" Click="Tab_Click" Tag="Markup"  FontSize="11"/>
+                        </UniformGrid>
+                    </Border>
+
+                    <!-- Panel content -->
+                    <Grid Grid.Row="1">
+
+                        <!-- ── ADJUST PANEL ── -->
+                        <ScrollViewer x:Name="AdjustPanel" Style="{StaticResource DarkScroll}" Padding="12">
+                            <StackPanel>
+                                <!-- Histogram -->
+                                <Canvas x:Name="HistogramCanvas" Height="68" Margin="0,0,0,10"
+                                        Background="#0D0D0F" ClipToBounds="True">
+                                    <Border Width="268" Height="68" Background="#0D0D0F" Canvas.Left="0" Canvas.Top="0"
+                                            BorderBrush="#1A1A1F" BorderThickness="0,0,0,1"/>
+                                </Canvas>
+
+                                <!-- EXIF / Metadata info -->
+                                <Border Margin="0,0,0,8">
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,4" Cursor="Hand" MouseDown="ExifHeader_MouseDown">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="INFO" Style="{StaticResource SectionLabel}" Margin="0" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="ExifChevron" Grid.Column="1" Text="▸"
+                                                       Foreground="#55556A" FontSize="10" VerticalAlignment="Center"/>
+                                        </Grid>
+                                        <Border x:Name="ExifPanel" Visibility="Collapsed"
+                                                Background="#0D0D0F" CornerRadius="8"
+                                                BorderBrush="#1A1A1F" BorderThickness="1" Padding="10,8">
+                                            <TextBlock x:Name="ExifText" Foreground="#8E8EA0" FontSize="11"
+                                                       TextWrapping="Wrap" LineHeight="18"
+                                                       Text="No image loaded"/>
+                                        </Border>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Auto Enhance -->
+                                <Border CornerRadius="10" Margin="0,0,0,12" ClipToBounds="True">
+                                    <Border.Background>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                            <GradientStop Color="#131B2B" Offset="0"/>
+                                            <GradientStop Color="#0E1A13" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                    <Border.BorderBrush>
+                                        <SolidColorBrush Color="#1A3450" Opacity="0.8"/>
+                                    </Border.BorderBrush>
+                                    <Border.BorderThickness>1</Border.BorderThickness>
+                                    <StackPanel>
+                                        <!-- Toggle row -->
+                                        <Grid Margin="12,10,12,10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="Auto Enhance" Foreground="#F0F0F2"
+                                                           FontSize="13" FontWeight="SemiBold"/>
+                                                <TextBlock x:Name="AutoSubLabel"
+                                                           Text="Smart analysis of your photo"
+                                                           Foreground="#8E8EA0" FontSize="12" Margin="0,2,0,0"/>
+                                            </StackPanel>
+                                            <Button x:Name="AutoBtn" Grid.Column="1"
+                                                    Style="{StaticResource PrimaryBtn}"
+                                                    Height="30" Padding="14,0" FontSize="13"
+                                                    Click="AutoBtn_Click" IsEnabled="False"
+                                                    ToolTip="AI auto-enhance — analyzes the scene and applies a smart edit; use the slider to dial intensity">
+                                                ⚡ Auto
+                                            </Button>
+                                        </Grid>
+                                        <!-- Intensity panel (collapsed by default) -->
+                                        <Border x:Name="AutoIntensityPanel" Visibility="Collapsed"
+                                                BorderThickness="0,1,0,0" BorderBrush="#1A3450" Padding="12,10,12,10">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,6">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition/><ColumnDefinition/><ColumnDefinition/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="Subtle" Foreground="#55556A" FontSize="11" Grid.Column="0"/>
+                                                    <TextBlock Text="Default" Foreground="#8E8EA0" FontSize="11"
+                                                               FontWeight="Medium" Grid.Column="1" HorizontalAlignment="Center"/>
+                                                    <TextBlock Text="Strong" Foreground="#55556A" FontSize="11"
+                                                               HorizontalAlignment="Right" Grid.Column="2"/>
+                                                </Grid>
+                                                <Slider x:Name="AutoIntensitySlider" Style="{StaticResource IntensitySlider}"
+                                                        Minimum="-100" Maximum="100" Value="0" SmallChange="1" LargeChange="10"
+                                                        ValueChanged="AutoIntensity_Changed"/>
+                                                <TextBlock x:Name="AutoIntensityLabel" Text="Default"
+                                                           Foreground="#8E8EA0" FontSize="11" HorizontalAlignment="Center"
+                                                           Margin="0,4,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Light group -->
+                                <TextBlock Text="LIGHT" Style="{StaticResource SectionLabel}"/>
+                                <local:SliderRow x:Name="ExposureRow"    Label="Exposure"    Min="-100" Max="100" Changed="Adj_Changed"/>
+                                <local:SliderRow x:Name="BrillianceRow"  Label="Brilliance"  Min="-100" Max="100" Changed="Adj_Changed"/>
+                                <local:SliderRow x:Name="HighlightsRow"  Label="Highlights"  Min="-100" Max="100" Changed="Adj_Changed"/>
+                                <local:SliderRow x:Name="ShadowsRow"     Label="Shadows"     Min="-100" Max="100" Changed="Adj_Changed"/>
+                                <local:SliderRow x:Name="ContrastRow"    Label="Contrast"    Min="-100" Max="100" Changed="Adj_Changed"/>
+                                <local:SliderRow x:Name="BrightnessRow"  Label="Brightness"  Min="-100" Max="100" Changed="Adj_Changed"/>
+                                <local:SliderRow x:Name="BlackPointRow"  Label="Black Point" Min="-100" Max="100" Changed="Adj_Changed"/>
+
+                                <!-- Curves section -->
+                                <Border Margin="0,10,0,0">
+                                    <StackPanel>
+                                        <!-- Header row with toggle -->
+                                        <Grid Margin="0,0,0,6" Cursor="Hand" MouseDown="CurvesHeader_MouseDown">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="CURVES" Style="{StaticResource SectionLabel}" Margin="0" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="CurvesChevron" Grid.Column="1" Text="▸"
+                                                       Foreground="#55556A" FontSize="10" VerticalAlignment="Center"/>
+                                        </Grid>
+                                        <!-- Curves canvas (collapsed by default) -->
+                                        <Border x:Name="CurvesPanel" Visibility="Collapsed"
+                                                Background="#0D0D0F" CornerRadius="8"
+                                                BorderBrush="#1A1A1F" BorderThickness="1"
+                                                Padding="4,4,4,4">
+                                            <StackPanel>
+                                                <Canvas x:Name="CurvesCanvas" Width="236" Height="180"
+                                                        Background="Transparent" Cursor="Hand"
+                                                        MouseDown="CurvesCanvas_MouseDown"
+                                                        MouseMove="CurvesCanvas_MouseMove"
+                                                        MouseUp="CurvesCanvas_MouseUp"
+                                                        HorizontalAlignment="Center"/>
+                                                <Button x:Name="ResetCurveBtn" Style="{StaticResource DarkBtn}"
+                                                        Height="26" FontSize="11" Margin="0,4,0,0"
+                                                        Click="ResetCurve_Click" IsEnabled="False">
+                                                    Reset Curve
+                                                </Button>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Color group -->
+                                <TextBlock Text="COLOR" Style="{StaticResource SectionLabel}" Margin="0,12,0,4"/>
+                                <local:SliderRow x:Name="SaturationRow"  Label="Saturation"  Min="-100" Max="100" Changed="Adj_Changed"/>
+                                <local:SliderRow x:Name="VibranceRow"    Label="Vibrance"    Min="-100" Max="100" Changed="Adj_Changed"/>
+                                <local:SliderRow x:Name="WarmthRow"      Label="Temperature" Min="-100" Max="100" Changed="Adj_Changed"/>
+                                <local:SliderRow x:Name="TintRow"        Label="Tint"        Min="-100" Max="100" Changed="Adj_Changed"/>
+
+                                <!-- HSL Mixer -->
+                                <Border Margin="0,10,0,0">
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,6" Cursor="Hand" MouseDown="HslHeader_MouseDown">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="HSL MIX" Style="{StaticResource SectionLabel}" Margin="0" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="HslChevron" Grid.Column="1" Text="▸"
+                                                       Foreground="#55556A" FontSize="10" VerticalAlignment="Center"/>
+                                        </Grid>
+                                        <Border x:Name="HslPanel" Visibility="Collapsed">
+                                            <StackPanel>
+                                                <!-- Color channel selector -->
+                                                <UniformGrid x:Name="HslChannelGrid" Columns="7" Margin="0,0,0,8"/>
+                                                <!-- H and S sliders -->
+                                                <Grid Margin="0,0,0,2">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="18"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="38"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="H" Grid.Column="0" Foreground="#8E8EA0"
+                                                               FontSize="12" VerticalAlignment="Center"/>
+                                                    <Slider x:Name="HslHueSlider" Grid.Column="1" Style="{StaticResource EditSlider}"
+                                                            Minimum="-100" Maximum="100" Value="0" SmallChange="1"
+                                                            IsEnabled="False" ValueChanged="HslHue_Changed"/>
+                                                    <TextBlock x:Name="HslHueLabel" Grid.Column="2" Text="0"
+                                                               Foreground="#8E8EA0" FontSize="12"
+                                                               VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                                                </Grid>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="18"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="38"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="S" Grid.Column="0" Foreground="#8E8EA0"
+                                                               FontSize="12" VerticalAlignment="Center"/>
+                                                    <Slider x:Name="HslSatSlider" Grid.Column="1" Style="{StaticResource EditSlider}"
+                                                            Minimum="-100" Maximum="100" Value="0" SmallChange="1"
+                                                            IsEnabled="False" ValueChanged="HslSat_Changed"/>
+                                                    <TextBlock x:Name="HslSatLabel" Grid.Column="2" Text="0"
+                                                               Foreground="#8E8EA0" FontSize="12"
+                                                               VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Detail group -->
+                                <TextBlock Text="DETAIL" Style="{StaticResource SectionLabel}" Margin="0,12,0,4"/>
+                                <local:SliderRow x:Name="SharpnessRow"   Label="Sharpness"   Min="0"    Max="100" Changed="Adj_Changed"/>
+                                <local:SliderRow x:Name="DefinitionRow"  Label="Texture"     Min="0"    Max="100" Changed="Adj_Changed"/>
+                                <local:SliderRow x:Name="NoiseRow"       Label="Noise Reduct" Min="0"   Max="100" Changed="Adj_Changed"/>
+                                <local:SliderRow x:Name="VignetteRow"    Label="Vignette"    Min="0"    Max="100" Changed="Adj_Changed"/>
+                                <Border Height="16"/>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- ── FILTERS PANEL ── -->
+                        <ScrollViewer x:Name="FiltersPanel" Visibility="Collapsed"
+                                      Style="{StaticResource DarkScroll}" Padding="12">
+                            <StackPanel>
+                                <UniformGrid x:Name="FilterGrid" Columns="2" Margin="0,0,0,4"/>
+                                <!-- Filter intensity (hidden until filter selected) -->
+                                <Border x:Name="FilterIntensityPanel" Visibility="Collapsed" Margin="0,8,0,0">
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,4">
+                                            <TextBlock Text="INTENSITY" Style="{StaticResource SectionLabel}" Margin="0"/>
+                                            <TextBlock x:Name="FilterIntensityLabel" Text="100%" Foreground="#0A84FF"
+                                                       FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                        </Grid>
+                                        <Slider x:Name="FilterIntensitySlider" Style="{StaticResource IntensitySlider}"
+                                                Minimum="0" Maximum="100" Value="100" SmallChange="1"
+                                                ValueChanged="FilterIntensity_Changed"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- ── CROP PANEL ── -->
+                        <ScrollViewer x:Name="CropPanel" Visibility="Collapsed"
+                                      Style="{StaticResource DarkScroll}" Padding="12">
+                            <StackPanel>
+                                <!-- Quick transform buttons -->
+                                <TextBlock Text="TRANSFORM" Style="{StaticResource SectionLabel}"/>
+                                <UniformGrid Columns="2" Margin="0,0,0,8">
+                                    <Button Style="{StaticResource ToolBtn}" Click="RotateLeft_Click"
+                                            IsEnabled="False" x:Name="RotateLeftBtn" Margin="0,0,4,0">
+                                        <StackPanel>
+                                            <TextBlock Text="↶" FontSize="22" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Rotate L" FontSize="11" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Style="{StaticResource ToolBtn}" Click="RotateRight_Click"
+                                            IsEnabled="False" x:Name="RotateRightBtn" Margin="4,0,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="↷" FontSize="22" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Rotate R" FontSize="11" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Style="{StaticResource ToolBtn}" Click="FlipH_Click"
+                                            IsEnabled="False" x:Name="FlipHBtn" Margin="0,4,4,0">
+                                        <StackPanel>
+                                            <TextBlock Text="⇆" FontSize="22" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Flip H" FontSize="11" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Style="{StaticResource ToolBtn}" Click="FlipV_Click"
+                                            IsEnabled="False" x:Name="FlipVBtn" Margin="4,4,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="⇅" FontSize="22" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Flip V" FontSize="11" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                </UniformGrid>
+
+                                <Border Height="1" Background="#1A1A1F" Margin="0,4,0,8"/>
+
+                                <!-- Rotation sliders (non-destructive) -->
+                                <TextBlock Text="ROTATION" Style="{StaticResource SectionLabel}"/>
+                                <local:SliderRow x:Name="RotateZRow" Label="Angle (Z)"  Min="-45"  Max="45"  Changed="Rotation_Changed"/>
+                                <local:SliderRow x:Name="TiltYRow"   Label="Horiz (Y)"  Min="-100" Max="100" Changed="Rotation_Changed"/>
+                                <local:SliderRow x:Name="TiltXRow"   Label="Vert (X)"   Min="-100" Max="100" Changed="Rotation_Changed"/>
+
+                                <Border Height="1" Background="#1A1A1F" Margin="0,8,0,8"/>
+
+                                <!-- Crop settings -->
+                                <TextBlock Text="CROP" Style="{StaticResource SectionLabel}"/>
+
+                                <TextBlock Text="Orientation" Style="{StaticResource MutedText}" Margin="0,0,0,6"/>
+                                <UniformGrid Columns="2" Margin="0,0,0,10">
+                                    <ToggleButton x:Name="PortraitOrientBtn" Style="{StaticResource MarkupToolBtn}"
+                                                  IsChecked="False" Height="50" Margin="0,0,4,0"
+                                                  Click="CropOrient_Click" Tag="Portrait" IsEnabled="False">
+                                        <StackPanel>
+                                            <TextBlock Text="▯" FontSize="18" HorizontalAlignment="Center" Foreground="#F0F0F2"/>
+                                            <TextBlock Text="Portrait" FontSize="11" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </ToggleButton>
+                                    <ToggleButton x:Name="LandscapeOrientBtn" Style="{StaticResource MarkupToolBtn}"
+                                                  IsChecked="True" Height="50" Margin="4,0,0,0"
+                                                  Click="CropOrient_Click" Tag="Landscape" IsEnabled="False">
+                                        <StackPanel>
+                                            <TextBlock Text="▭" FontSize="18" HorizontalAlignment="Center" Foreground="#F0F0F2"/>
+                                            <TextBlock Text="Landscape" FontSize="11" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </ToggleButton>
+                                </UniformGrid>
+
+                                <TextBlock Text="Aspect ratio" Style="{StaticResource MutedText}" Margin="0,0,0,6"/>
+                                <ComboBox x:Name="AspectCombo" Style="{StaticResource DarkCombo}"
+                                          IsEnabled="False" Margin="0,0,0,10" SelectionChanged="Aspect_Changed"/>
+                                <Button x:Name="ApplyCropBtn" Style="{StaticResource PrimaryBtn}"
+                                        Height="34" Click="ApplyCrop_Click" IsEnabled="False" Margin="0,0,0,6">
+                                    ✓ Apply Crop
+                                </Button>
+                                <Button x:Name="UndoCropBtn" Style="{StaticResource DarkBtn}"
+                                        Height="34" Click="UndoCrop_Click" IsEnabled="False" Margin="0,0,0,6">
+                                    ↩ Undo Crop
+                                </Button>
+                                <Button x:Name="CancelCropBtn" Style="{StaticResource DarkBtn}"
+                                        Height="34" Click="CancelCrop_Click" IsEnabled="False">
+                                    Cancel Crop
+                                </Button>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- ── MARKUP PANEL ── -->
+                        <ScrollViewer x:Name="MarkupPanel" Visibility="Collapsed"
+                                      Style="{StaticResource DarkScroll}" Padding="12">
+                            <StackPanel>
+                                <TextBlock Text="DRAWING TOOL" Style="{StaticResource SectionLabel}"/>
+                                <UniformGrid Columns="3" Margin="0,0,0,12">
+                                    <ToggleButton x:Name="PenTool"    Style="{StaticResource MarkupToolBtn}"
+                                                  IsChecked="True" Tag="pen" Click="MarkupTool_Click"
+                                                  IsEnabled="False" Margin="0,0,3,4">
+                                        <StackPanel>
+                                            <TextBlock Text="✏" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Pen" FontSize="10" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </ToggleButton>
+                                    <ToggleButton x:Name="BrushTool"  Style="{StaticResource MarkupToolBtn}"
+                                                  Tag="brush" Click="MarkupTool_Click"
+                                                  IsEnabled="False" Margin="2,0,2,4">
+                                        <StackPanel>
+                                            <TextBlock Text="◎" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Brush" FontSize="10" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </ToggleButton>
+                                    <ToggleButton x:Name="EraserTool" Style="{StaticResource MarkupToolBtn}"
+                                                  Tag="eraser" Click="MarkupTool_Click"
+                                                  IsEnabled="False" Margin="3,0,0,4">
+                                        <StackPanel>
+                                            <TextBlock Text="⌫" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Erase" FontSize="10" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </ToggleButton>
+                                    <ToggleButton x:Name="LineTool"   Style="{StaticResource MarkupToolBtn}"
+                                                  Tag="line" Click="MarkupTool_Click"
+                                                  IsEnabled="False" Margin="0,0,3,4">
+                                        <StackPanel>
+                                            <TextBlock Text="╱" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Line" FontSize="10" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </ToggleButton>
+                                    <ToggleButton x:Name="RectTool"   Style="{StaticResource MarkupToolBtn}"
+                                                  Tag="rect" Click="MarkupTool_Click"
+                                                  IsEnabled="False" Margin="2,0,2,4">
+                                        <StackPanel>
+                                            <TextBlock Text="□" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Box" FontSize="10" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </ToggleButton>
+                                    <ToggleButton x:Name="ArrowTool"  Style="{StaticResource MarkupToolBtn}"
+                                                  Tag="arrow" Click="MarkupTool_Click"
+                                                  IsEnabled="False" Margin="3,0,0,4">
+                                        <StackPanel>
+                                            <TextBlock Text="→" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Arrow" FontSize="10" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </ToggleButton>
+                                    <ToggleButton x:Name="RulerTool"  Style="{StaticResource MarkupToolBtn}"
+                                                  Tag="ruler" Click="MarkupTool_Click"
+                                                  IsEnabled="False" Margin="0,0,3,0">
+                                        <StackPanel>
+                                            <TextBlock Text="↔" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Ruler" FontSize="10" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </ToggleButton>
+                                </UniformGrid>
+
+                                <TextBlock Text="COLOR" Style="{StaticResource SectionLabel}"/>
+                                <WrapPanel x:Name="SwatchPanel" Margin="0,0,0,12"/>
+
+                                <TextBlock Text="BRUSH SIZE" Style="{StaticResource SectionLabel}"/>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="38"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Slider x:Name="BrushSlider" Style="{StaticResource EditSlider}"
+                                            Minimum="2" Maximum="48" Value="8" IsEnabled="False"
+                                            ValueChanged="BrushSize_Changed"/>
+                                    <TextBlock x:Name="BrushLabel" Text="8" Grid.Column="1"
+                                               Foreground="#8E8EA0" FontSize="12" VerticalAlignment="Center"
+                                               HorizontalAlignment="Right"/>
+                                </Grid>
+
+                                <UniformGrid Columns="2">
+                                    <Button x:Name="UndoMarkupBtn" Style="{StaticResource DarkBtn}"
+                                            Height="34" Click="UndoMarkup_Click" IsEnabled="False" Margin="0,0,4,0">
+                                        Undo
+                                    </Button>
+                                    <Button x:Name="ClearMarkupBtn" Style="{StaticResource DarkBtn}"
+                                            Height="34" Click="ClearMarkup_Click" IsEnabled="False" Margin="4,0,0,0"
+                                            Foreground="#FF453A">
+                                        Clear
+                                    </Button>
+                                </UniformGrid>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
