@@ -1,0 +1,28 @@
+# Build outputs
+LumaPhoto/bin/
+LumaPhoto/obj/
+publish/
+installer_output/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# Training data & checkpoints (too large for git)
+training/training/data/
+training/training/checkpoints/
+training/training/__pycache__/
+*.pt
+*.onnx
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vs/
+*.user
+*.suo

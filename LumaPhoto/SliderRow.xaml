@@ -1,0 +1,49 @@
+<UserControl x:Class="LumaPhoto.SliderRow"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Margin="0,1,0,1">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="92"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="38"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock x:Name="LabelText" Grid.Column="0" Text="Label"
+                   Foreground="#8E8EA0" FontSize="12" VerticalAlignment="Center"/>
+        <Slider x:Name="ValueSlider" x:FieldModifier="public" Grid.Column="1"
+                Minimum="-100" Maximum="100" Value="0" SmallChange="1" LargeChange="10"
+                IsEnabled="False" VerticalAlignment="Center"
+                ValueChanged="Slider_Changed">
+            <Slider.Template>
+                <ControlTemplate TargetType="Slider">
+                    <Grid>
+                        <Border Height="3" CornerRadius="2" Background="#28282F" VerticalAlignment="Center"/>
+                        <Track x:Name="PART_Track">
+                            <Track.Thumb>
+                                <Thumb>
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Ellipse Width="13" Height="13" Fill="#0A84FF"/>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Slider.Template>
+        </Slider>
+        <!-- Editable value: click to type a number, Enter/Tab/click-away commits -->
+        <TextBox x:Name="ValueText" Grid.Column="2" Text="0"
+                 Foreground="#8E8EA0" FontSize="12" VerticalAlignment="Center"
+                 HorizontalAlignment="Right" Width="36"
+                 Background="Transparent" BorderThickness="0"
+                 TextAlignment="Right" Padding="0,0,0,0"
+                 CaretBrush="#0A84FF" SelectionBrush="#0A84FF"
+                 Cursor="IBeam"
+                 GotFocus="ValueText_GotFocus"
+                 LostFocus="ValueText_LostFocus"
+                 KeyDown="ValueText_KeyDown"
+                 PreviewMouseDown="ValueText_PreviewMouseDown"/>
+    </Grid>
+</UserControl>
