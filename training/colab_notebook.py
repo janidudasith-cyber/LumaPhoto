@@ -1,6 +1,6 @@
 # =============================================================================
 # LumaPhoto — Google Colab Training Notebook
-# Train PhotoEnhancerNet on PPR10K + DIV2K synthetic → export enhancer_params.onnx
+# Train PhotoEnhancerNet on PPR10K + MIT-FiveK + DIV2K → export enhancer_params.onnx
 #
 # HOW TO USE
 # ──────────
@@ -8,10 +8,23 @@
 # 2. Runtime → Change runtime type → GPU (T4)
 # 3. Paste this entire file into a single code cell and run it.
 #
-# BEFORE RUNNING — set the PPR10K folder URLs below:
-#   Open https://drive.google.com/drive/folders/1kB2OSAGy8uc0xUXaMKoPB0HMSc-rkrLW
-#   Navigate into the 360p folder → right-click "source" → Get link → paste as PPR10K_SOURCE_URL
-#   Do the same for "target_a"                              → paste as PPR10K_TARGET_URL
+# DATASETS
+#   PPR10K   — 11 161 portrait pairs (Expert A).  Required.
+#              Set PPR10K_SOURCE_URL + PPR10K_TARGET_URL below.
+#   FiveK    — 5 000 diverse-scene pairs (Expert C: landscapes, cities, indoors…).
+#              Strongly recommended — teaches the model non-portrait scenes.
+#              Two ways to get it:
+#                A) Kaggle (easiest):
+#                   1. Create a free account at kaggle.com
+#                   2. Profile → Settings → API → Create New Token → kaggle.json downloaded
+#                   3. Upload kaggle.json to your Google Drive root
+#                   4. Set FIVEK_KAGGLE = True below
+#                B) Manual (if you already have it):
+#                   Download from https://data.csail.mit.edu/graphics/fivek/
+#                   Organise as: fivek/input/ and fivek/expertC/
+#                   Upload the folder to Google Drive
+#                   Set FIVEK_DRIVE_PATH to the Drive path below
+#   DIV2K    — 800 diverse images used as synthetic augmentation.  Auto-downloaded.
 #
 # OUTPUT
 #   enhancer_params.onnx is saved to your Google Drive at:
@@ -19,15 +32,33 @@
 #   Download it and place it next to LumaPhoto.exe
 #
 # EXPECTED TIME (Colab T4)
-#   PPR10K 360p (~8K pairs)   ~2–3 hours
-#   + DIV2K synthetic         +30 min
+#   PPR10K only              ~2–3 h / 60 ep
+#   PPR10K + FiveK           ~4–5 h / 60 ep  (recommended)
 # =============================================================================
 
-# ── Paste your PPR10K subfolder URLs here ────────────────────────────────────
-PPR10K_SOURCE_URL = ""   # e.g. "https://drive.google.com/drive/folders/XXXXX"
-PPR10K_TARGET_URL = ""   # e.g. "https://drive.google.com/drive/folders/YYYYY"
-# If you only have the top-level folder URL, paste it here and leave above blank:
-PPR10K_ROOT_URL   = "https://drive.google.com/drive/folders/1kB2OSAGy8uc0xUXaMKoPB0HMSc-rkrLW"
+# ── Expert selection ──────────────────────────────────────────────────────────
+# Train one model per expert, then all three power the Auto Enhance slider:
+#   slider right (+100) → Expert A  (vibrant / punchy)
+#   slider middle (  0) → Expert C  (natural / balanced)  ← start here
+#   slider left  (-100) → Expert E  (moody / dramatic)
+#
+# Run this notebook three times, changing EXPERT each time:
+#   First run:  EXPERT = "c"  → saves fivek_expert_c.onnx  (natural default)
+#   Second run: EXPERT = "a"  → saves fivek_expert_a.onnx  (vibrant)
+#   Third run:  EXPERT = "e"  → saves fivek_expert_e.onnx  (dramatic)
+EXPERT = "c"   # <── change to "a" or "e" for the other two runs
+
+# ── MIT-FiveK config ──────────────────────────────────────────────────────────
+# Option A: auto-download from Kaggle (needs kaggle.json on your Drive root)
+#   1. Create free account at kaggle.com
+#   2. Profile → Settings → API → Create New Token → kaggle.json downloaded
+#   3. Upload kaggle.json to your Google Drive root
+#   4. Set FIVEK_KAGGLE = True
+FIVEK_KAGGLE      = False
+FIVEK_KAGGLE_SLUG = "weipengzhang/adobe-fivek"   # kaggle dataset slug
+# Option B: set if you already have the dataset on Drive
+#   Structure expected: <path>/input/*.jpg  and  <path>/expert<X>/*.jpg
+FIVEK_DRIVE_PATH  = ""   # e.g. "/content/drive/MyDrive/fivek"
 # =============================================================================
 
 import os, sys, subprocess, math, time, copy, random
@@ -59,67 +90,14 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if not torch.cuda.is_available():
     print("⚠  No GPU found. Runtime → Change runtime type → GPU")
 
-# ── 3. Download PPR10K from Google Drive ─────────────────────────────────────
-PPR10K_ROOT = Path("/content/ppr10k")
-PPR10K_ROOT.mkdir(exist_ok=True)
-
-def _is_file_url(url):
-    return "/file/d/" in url
-
-def _download_and_extract(url, out_dir, label):
-    """Download a file or folder URL from Google Drive and extract if needed."""
-    import zipfile, tarfile
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    if _is_file_url(url):
-        # Single file (likely a zip) — download then extract
-        tmp = out_dir.parent / f"_tmp_{label}.zip"
-        print(f"Downloading {label} (zip)…")
-        gdown.download(url, str(tmp), quiet=False, fuzzy=True)
-        print(f"Extracting {label}…")
-        if zipfile.is_zipfile(tmp):
-            with zipfile.ZipFile(tmp) as z: z.extractall(out_dir)
-        elif tarfile.is_tarfile(tmp):
-            with tarfile.open(tmp) as t: t.extractall(out_dir)
-        else:
-            raise RuntimeError(f"Downloaded file is not a zip/tar: {tmp}")
-        tmp.unlink()
-        # If extraction created a single subfolder, use that as the dir
-        children = [p for p in out_dir.iterdir()]
-        if len(children) == 1 and children[0].is_dir():
-            return children[0]
-        return out_dir
-    else:
-        # Folder URL
-        print(f"Downloading {label} (folder)…")
-        gdown.download_folder(url, output=str(out_dir), quiet=False)
-        return out_dir
-
-if PPR10K_SOURCE_URL and PPR10K_TARGET_URL:
-    src_dir = _download_and_extract(PPR10K_SOURCE_URL, PPR10K_ROOT / "source",  "source")
-    tgt_dir = _download_and_extract(PPR10K_TARGET_URL, PPR10K_ROOT / "target_a", "target_a")
-    # Ensure standard layout: ppr10k/source/ and ppr10k/target_a/
-    import shutil
-    if src_dir != PPR10K_ROOT / "source":
-        if (PPR10K_ROOT / "source").exists(): shutil.rmtree(PPR10K_ROOT / "source")
-        src_dir.rename(PPR10K_ROOT / "source")
-    if tgt_dir != PPR10K_ROOT / "target_a":
-        if (PPR10K_ROOT / "target_a").exists(): shutil.rmtree(PPR10K_ROOT / "target_a")
-        tgt_dir.rename(PPR10K_ROOT / "target_a")
-else:
-    # Download top-level folder and auto-detect source/target_a inside
-    print("Downloading PPR10K (this may take a while)…")
-    gdown.download_folder(PPR10K_ROOT_URL, output=str(PPR10K_ROOT), quiet=False)
-    for dp in sorted(PPR10K_ROOT.rglob("*")):
-        if dp.is_dir():
-            contents = {p.name for p in dp.iterdir() if p.is_dir()}
-            if "source" in contents and "target_a" in contents:
-                PPR10K_ROOT = dp
-                print(f"PPR10K found at: {PPR10K_ROOT}")
-                break
-
-print(f"PPR10K source: {PPR10K_ROOT / 'source'} — exists: {(PPR10K_ROOT / 'source').exists()}")
-print(f"PPR10K target_a: {PPR10K_ROOT / 'target_a'} — exists: {(PPR10K_ROOT / 'target_a').exists()}")
+# ── 3. Validate expert config ─────────────────────────────────────────────────
+EXPERT = EXPERT.lower().strip()
+assert EXPERT in ("a", "b", "c", "d", "e"), f"EXPERT must be a/b/c/d/e, got: {EXPERT}"
+# Dataset folder names: raw/ = input originals, a/b/c/d/e/ = expert retouches
+EXPERT_DIR   = EXPERT          # folder is just "c", "a", "e" etc.
+INPUT_DIR    = "raw"           # original images folder
+ONNX_NAME    = f"fivek_expert_{EXPERT}.onnx"
+print(f"Training FiveK Expert {EXPERT.upper()} → will save as {ONNX_NAME}")
 
 # ── 4. Download DIV2K for synthetic augmentation ──────────────────────────────
 DIV2K_DIR = Path("/content/div2k")
@@ -136,6 +114,116 @@ if not DIV2K_DIR.exists():
 DIV2K_IMAGES = str(DIV2K_DIR / "DIV2K_train_HR")
 if not Path(DIV2K_IMAGES).exists():
     DIV2K_IMAGES = str(DIV2K_DIR)
+
+# ── 4b. MIT-FiveK (diverse scenes — landscapes, cities, indoors, etc.) ────────
+FIVEK_ROOT = Path("/content/fivek")
+
+def _find_fivek_layout(base: Path):
+    """Return the directory that contains raw/ (or input/) and at least one expert folder."""
+    def _has_layout(d):
+        has_input = (d / "raw").exists() or (d / "input").exists()
+        has_expert = any((d / x).exists() for x in ("a","b","c","d","e","expertC","expertA"))
+        return has_input and has_expert
+    if _has_layout(base):
+        return base
+    # Search one level deeper (Kaggle sometimes adds a wrapper folder)
+    for child in sorted(base.iterdir()):
+        if child.is_dir() and _has_layout(child):
+            return child
+    return None
+
+if FIVEK_DRIVE_PATH and Path(FIVEK_DRIVE_PATH).exists():
+    # User already has FiveK on Drive — just point to it
+    FIVEK_ROOT = Path(FIVEK_DRIVE_PATH)
+    print(f"FiveK: using existing dataset at {FIVEK_ROOT}")
+
+elif FIVEK_KAGGLE:
+    print("Setting up Kaggle credentials…")
+    subprocess.run(["pip", "install", "-q", "kaggle"], check=True)
+    kaggle_configured = False
+
+    # Option 1: Colab Secrets (new-style KGAT_ token)
+    try:
+        from google.colab import userdata
+        token = userdata.get("KAGGLE_API_TOKEN")
+        if token:
+            os.environ["KAGGLE_API_TOKEN"] = token
+            kaggle_configured = True
+            print("  Token loaded from Colab Secrets ✓")
+    except Exception:
+        pass
+
+    # Option 2: kaggle.json on Drive (legacy format)
+    if not kaggle_configured:
+        import shutil
+        kaggle_src = Path("/content/drive/MyDrive/kaggle.json")
+        kaggle_dst = Path("/root/.config/kaggle/kaggle.json")
+        if kaggle_src.exists():
+            kaggle_dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(kaggle_src, kaggle_dst)
+            os.chmod(str(kaggle_dst), 0o600)
+            kaggle_configured = True
+            print("  kaggle.json loaded from Drive ✓")
+
+    if not kaggle_configured:
+        print("  ⚠  No Kaggle credentials found.")
+        print("     Left sidebar → 🔑 Secrets → Add 'KAGGLE_API_TOKEN' → paste your KGAT_... token")
+        raise RuntimeError("Kaggle credentials missing — add KAGGLE_API_TOKEN to Colab Secrets")
+
+    print(f"Downloading FiveK from Kaggle ({FIVEK_KAGGLE_SLUG})…")
+    dl_dir = Path("/content/fivek_dl")
+    dl_dir.mkdir(exist_ok=True)
+    result = subprocess.run(
+        ["kaggle", "datasets", "download", "-d", FIVEK_KAGGLE_SLUG,
+         "-p", str(dl_dir), "--unzip"],
+        capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"  ⚠  Download failed:\n{result.stderr.strip()}")
+        raise RuntimeError(f"Kaggle download failed — check slug '{FIVEK_KAGGLE_SLUG}'")
+    else:
+        import shutil as _shutil
+        for _unused in ("b", "d"):
+            _p = dl_dir / _unused
+            if _p.exists():
+                _shutil.rmtree(_p); print(f"  Removed unused folder: {_unused}/")
+        found = _find_fivek_layout(dl_dir)
+        if found:
+            FIVEK_ROOT = found
+            print(f"  FiveK ready at {FIVEK_ROOT} ✓")
+        else:
+            print(f"  ⚠  Unexpected folder layout: {[p.name for p in dl_dir.iterdir()]}")
+            raise RuntimeError("FiveK downloaded but folder structure not recognised")
+
+else:
+    print("FiveK: skipped (set FIVEK_KAGGLE=True or FIVEK_DRIVE_PATH to enable)")
+    print("       Training will proceed with PPR10K + DIV2K only.")
+
+def _find_fivek_layout_expert(base: Path, expert_dir: str):
+    """Return directory containing input/ and <expert_dir>/ subdirs, or None."""
+    if (base / "input").exists() and (base / expert_dir).exists():
+        return base
+    for child in sorted(base.iterdir()):
+        if child.is_dir() and (child / "input").exists() and (child / expert_dir).exists():
+            return child
+    return None
+
+fivek_ok = False
+if FIVEK_ROOT.exists():
+    found = _find_fivek_layout_expert(FIVEK_ROOT, EXPERT_DIR)
+    if found:
+        FIVEK_ROOT = found
+        fivek_ok   = True
+        n_input  = len(list((FIVEK_ROOT / "input").iterdir()))
+        n_expert = len(list((FIVEK_ROOT / EXPERT_DIR).iterdir()))
+        print(f"FiveK Expert {EXPERT.upper()}: {n_input} input  |  {n_expert} target images ✓")
+    else:
+        print(f"⚠  FiveK found but missing '{EXPERT_DIR}/' folder.")
+        print(f"   Available folders: {[p.name for p in FIVEK_ROOT.iterdir() if p.is_dir()]}")
+
+if not fivek_ok:
+    raise RuntimeError(
+        "FiveK dataset not found. Set FIVEK_KAGGLE=True or FIVEK_DRIVE_PATH above."
+    )
 
 
 # ── 5. Dataset loaders ────────────────────────────────────────────────────────
@@ -178,6 +266,30 @@ class PPR10KDataset(Dataset):
         return _sync_crop_flip(inp, tgt, self.crop, random.random() > 0.5)
 
 
+class FiveKDataset(Dataset):
+    """MIT-Adobe FiveK — 5 000 diverse-scene pairs (raw → chosen expert retouch).
+    Expects: <root>/raw/*.jpg  (or input/) and  <root>/<expert>/*.jpg"""
+    def __init__(self, root, expert_dir, crop=256):
+        root = Path(root)
+        # Support both 'raw/' (weipengzhang dataset) and 'input/' naming
+        self.inp_dir = root / "raw" if (root / "raw").exists() else root / "input"
+        self.tgt_dir = root / expert_dir
+        names = sorted(f.name for f in self.inp_dir.iterdir()
+                       if f.suffix.lower() in EXTS)
+        self.pairs = [(self.inp_dir/n, self.tgt_dir/n)
+                      for n in names if (self.tgt_dir/n).exists()]
+        self.crop = crop
+        print(f"  FiveK:  {len(self.pairs):,} pairs (expert {expert_dir[-1].upper()})")
+
+    def __len__(self): return len(self.pairs)
+
+    def __getitem__(self, idx):
+        inp_p, tgt_p = self.pairs[idx]
+        inp  = _resize_min(Image.open(inp_p).convert("RGB"), 288)
+        tgt  = Image.open(tgt_p).convert("RGB").resize(inp.size, Image.BICUBIC)
+        return _sync_crop_flip(inp, tgt, self.crop, random.random() > 0.5)
+
+
 class SyntheticDataset(Dataset):
     def __init__(self, image_dir, crop=256, max_images=5000):
         self.files = sorted(p for p in Path(image_dir).rglob("*")
@@ -206,22 +318,18 @@ class SyntheticDataset(Dataset):
 
 
 # Build combined dataset
+print("Building dataset…")
 datasets = []
-if (PPR10K_ROOT / "source").exists() and (PPR10K_ROOT / "target_a").exists():
-    ds = PPR10KDataset(PPR10K_ROOT); datasets.append(ds)
-else:
-    print("⚠  PPR10K not found — check your URLs above")
+
+ds = FiveKDataset(FIVEK_ROOT, EXPERT_DIR); datasets.append(ds)
 
 if Path(DIV2K_IMAGES).exists():
     ds = SyntheticDataset(DIV2K_IMAGES, max_images=800); datasets.append(ds)
-    print(f"  Synthetic: {len(ds):,} images (DIV2K)")
-
-if not datasets:
-    raise RuntimeError("No datasets found. Check PPR10K URLs.")
+    print(f"  Synthetic: {len(ds):,} images (DIV2K augmentation)")
 
 full_ds = datasets[0] if len(datasets) == 1 else ConcatDataset(datasets)
 total   = sum(len(d) for d in datasets)
-print(f"\nTotal: {total:,} training pairs")
+print(f"\nTotal: {total:,} training pairs  (Expert {EXPERT.upper()} target style)")
 
 BATCH  = 16
 loader = DataLoader(full_ds, batch_size=BATCH, shuffle=True,
@@ -408,7 +516,9 @@ best_loss  = math.inf
 start_epoch = 0
 
 # ── Resume from checkpoint if available ──────────────────────────────────────
-resume_path = DRIVE_OUT / "last.pt"
+# Each expert gets its own checkpoint so runs don't collide on Drive
+CKPT_SUFFIX = f"_expert_{EXPERT}"
+resume_path = DRIVE_OUT / f"last{CKPT_SUFFIX}.pt"
 if resume_path.exists():
     print(f"Resuming from {resume_path} …")
     ckpt = torch.load(resume_path, map_location=DEVICE)
@@ -459,13 +569,13 @@ for epoch in range(start_epoch, EPOCHS):
     # Save to local + Google Drive so a session reset doesn't lose progress
     ckpt = {"epoch":epoch,"model":model.state_dict(),"ema":ema.state_dict(),
             "optimizer":optimizer.state_dict(),"scheduler":scheduler.state_dict(),"best_loss":best_loss}
-    torch.save(ckpt, CKPT_DIR/"last.pt")
-    torch.save(ckpt, DRIVE_OUT/"last.pt")   # Drive backup
+    torch.save(ckpt, CKPT_DIR/f"last{CKPT_SUFFIX}.pt")
+    torch.save(ckpt, DRIVE_OUT/f"last{CKPT_SUFFIX}.pt")   # Drive backup
 
     if avg < best_loss:
         best_loss = avg
-        torch.save(ema.state_dict(), CKPT_DIR/"best.pt")
-        torch.save(ema.state_dict(), DRIVE_OUT/"best.pt")   # Drive backup
+        torch.save(ema.state_dict(), CKPT_DIR/f"best{CKPT_SUFFIX}.pt")
+        torch.save(ema.state_dict(), DRIVE_OUT/f"best{CKPT_SUFFIX}.pt")   # Drive backup
         print(f"  ↳ New best (EMA weights): {best_loss:.4f}")
 
 print(f"\nTraining complete in {(time.time()-t_start)/3600:.2f}h  |  Best loss: {best_loss:.4f}")
@@ -473,10 +583,10 @@ print(f"\nTraining complete in {(time.time()-t_start)/3600:.2f}h  |  Best loss: 
 
 # ── 11. Export ONNX ───────────────────────────────────────────────────────────
 
-ONNX_PATH = str(DRIVE_OUT / "enhancer_params.onnx")
+ONNX_PATH = str(DRIVE_OUT / ONNX_NAME)   # e.g. fivek_expert_c.onnx
 
 model.eval().cpu()
-model.load_state_dict(torch.load(CKPT_DIR/"best.pt", map_location="cpu"))
+model.load_state_dict(torch.load(CKPT_DIR/f"best{CKPT_SUFFIX}.pt", map_location="cpu"))
 
 dummy = torch.randn(1,3,224,224)
 with torch.no_grad():
@@ -488,7 +598,11 @@ with torch.no_grad():
 import onnxruntime as ort
 sess    = ort.InferenceSession(ONNX_PATH)
 out_arr = sess.run(None, {"input": np.random.randn(1,3,224,224).astype(np.float32)})[0]
-print("\nONNX export verified ✓")
+print(f"\nONNX export verified ✓  ({ONNX_NAME})")
 print("Sample:", {n:round(float(v),1) for n,v in zip(PARAM_NAMES, out_arr[0])})
 print(f"\nSaved to Google Drive: {ONNX_PATH}")
-print("Download it from Google Drive and place it next to LumaPhoto.exe")
+print(f"Download and place next to LumaPhoto.exe")
+print(f"After all 3 experts are trained you will have:")
+print(f"  fivek_expert_c.onnx  ← natural (slider centre)")
+print(f"  fivek_expert_a.onnx  ← vibrant (slider right)")
+print(f"  fivek_expert_e.onnx  ← dramatic (slider left)")

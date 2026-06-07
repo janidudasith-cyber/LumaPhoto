@@ -3,7 +3,7 @@
 ; Then open this file in Inno Setup Compiler and click Build > Compile
 
 #define MyAppName    "LumaPhoto"
-#define MyAppVersion "1.0"
+#define MyAppVersion "1.1"
 #define MyAppPublisher "LumaPhoto"
 #define MyAppURL     "https://github.com/janidudasith-cyber/LumaPhoto"
 #define MyAppExe     "LumaPhoto.exe"
@@ -27,6 +27,8 @@ SetupIconFile=LumaPhoto\LumaPhoto.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
+CloseApplications=yes
+RestartApplications=yes
 MinVersion=10.0
 ArchitecturesInstallIn64BitMode=x64
 ArchitecturesAllowed=x64
