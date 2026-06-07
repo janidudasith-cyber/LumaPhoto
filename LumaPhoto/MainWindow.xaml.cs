@@ -50,6 +50,15 @@ public partial class MainWindow : Window
     private UIElement? _currentShape;
     private Ellipse?    _eraserCursor; // visual ring shown while erasing
     private TextBlock?  _rulerLabel;   // live distance label while ruler is dragged
+    private float       _fontSize     = 24;
+    private string      _fontFamily   = "Arial";
+    private TextBox?    _activeTextBox;  // inline editor while text tool is placing
+    private UIElement?  _draggedStroke;  // stroke being moved in hand mode
+    private Point       _dragAnchor;     // canvas-space mouse position when drag started
+    private Point       _handMouseStart; // position at mouse-down in hand mode
+    private bool        _handDragging;   // true once movement threshold or long-press fires
+    private readonly System.Windows.Threading.DispatcherTimer _longPressTimer = new()
+        { Interval = TimeSpan.FromMilliseconds(280) };
     private bool _suppressAspectChanged = false;
 
     // Original pixels — set once on load, never changed; used for Revert
@@ -67,6 +76,9 @@ public partial class MainWindow : Window
         public double Left, Top, W, H;   // rect
         public List<Point>? HeadPts;     // arrowhead polygon
         public string? RulerText;        // ruler distance label
+        public string? TextContent;      // text tool
+        public double  FontSize;         // text tool font size
+        public string? FontFamilyName;   // text tool font family
     }
 
     private class HistorySnapshot
@@ -125,6 +137,9 @@ public partial class MainWindow : Window
     private bool   _isPanning;
     private Point  _panAnchor;
 
+    // JPEG export quality (60–100); shown + controlled from the status bar
+    private int _jpegQuality = 85;
+
     // New feature state
     private string? _currentFilePath;
     private bool    _fullScreen      = false;
@@ -170,6 +185,8 @@ public partial class MainWindow : Window
         InitializeComponent();
         BuildFilterGrid();
         BuildSwatches();
+        BuildFontCombo();
+        _longPressTimer.Tick += LongPressTimer_Tick;
         SetupRenderTimer();
         PopulateAspectRatios();
 
@@ -194,14 +211,20 @@ public partial class MainWindow : Window
 
         // SourceInitialized fires when the Win32 HWND is first created —
         // the earliest safe moment to call DWM APIs
+        AppVersionLabel.Text = $"v{AppVersion.Current}";
+
         SourceInitialized += (_, _) => ApplyDarkTitleBar();
-        Loaded  += (_, _) => UpdateLayout();
+        Loaded  += (_, _) => { UpdateLayout(); _ = CheckForUpdateAsync(); };
         Closed  += (_, _) => _neuralEnhancer?.Dispose();
         SizeChanged += (_, _) => { if (_cropping) ClampCropToImage(); RefreshCropOverlay(); if (_splitViewOn) UpdateSplitView(); };
         this.Icon = CreateAppIcon();
 
-        // Load Places365-MobileNet in the background so startup is not delayed
-        Task.Run(() => _neuralEnhancer = new NeuralEnhancer());
+        // Load neural enhancer in the background so startup is not delayed
+        Task.Run(() =>
+        {
+            _neuralEnhancer = new NeuralEnhancer();
+            // Diagnostic toasts removed — NN status visible via Auto button label.
+        });
     }
 
     // ── Dark title bar via Windows DWM API ──
@@ -393,6 +416,7 @@ public partial class MainWindow : Window
         {
             PhotoDisplay.Source = result;
             ScheduleHistogram();
+            UpdateStatusBar();
             if (_splitViewOn) UpdateSplitView();
         }
     }
@@ -428,49 +452,67 @@ public partial class MainWindow : Window
     }
 
     // ── Load image ──
-    private void LoadImageFile(string path)
+    // Async so HEIC/large image decode never freezes the UI thread.
+    // Cancels any prior in-flight load so rapid file switching stays responsive.
+    private async void LoadImageFile(string path)
     {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = new CancellationTokenSource();
+        var token = _loadCts.Token;
+
+        byte[] pixels; int w, h;
         try
         {
-            var (pixels, w, h) = ImageProcessor.LoadImageFile(path);
-            _sourcePixels = pixels;
-            _sourceW = w; _sourceH = h;
-            // Save originals for Revert
-            _originalPixels = (byte[])pixels.Clone();
-            _originalW = w; _originalH = h;
-            _fileName        = System.IO.Path.GetFileNameWithoutExtension(path);
-            _currentFilePath = path;
-            FileMetaText.Text = $"{System.IO.Path.GetFileName(path)}  ·  {w} × {h}";
-            _imageLoaded = true;
-
-            EmptyState.Visibility   = Visibility.Collapsed;
-            PhotoDisplay.Visibility = Visibility.Visible;
-            ResetZoom();
-
-            // Trigger filmstrip + EXIF in background
-            _ = LoadFilmstripAsync(System.IO.Path.GetDirectoryName(path) ?? "");
-            _ = ReadExifAsync(path);
-
-            if (_cropping) CancelCrop();
-            _hasPendingCrop  = false;
-            _preCropSnapshot = null;
-            _autoNNWeights   = null;  // invalidate NN cache for the new image
-            _history.Clear(); _future.Clear();
-            ResetAll();
-            UndoCropBtn.IsEnabled = false;
-            RevertBtn.IsEnabled = true;
-            SetControlsEnabled(true);
-            MarkupCanvas.Visibility = Visibility.Collapsed;
-            DoRender();
-            if (TabCrop.IsChecked == true)
-                Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render,
-                    new Action(StartCropOverlay));
+            (pixels, w, h) = await Task.Run(() => ImageProcessor.LoadImageFile(path), token);
         }
+        catch (OperationCanceledException) { return; }
         catch (Exception ex)
         {
-            MessageBox.Show($"Could not open image:\n{ex.Message}", "Luma",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
+            if (token.IsCancellationRequested) return;
+            string ext = System.IO.Path.GetExtension(path).ToLowerInvariant();
+            string msg = (ext == ".heic" || ext == ".heif")
+                ? "Could not open HEIC file.\n\nInstall the free \"HEIC Image Extensions\" from the Microsoft Store to enable HEIC support:\nmicrosoft.com/store/apps/9PMMSR1CGPWG"
+                : $"Could not open image:\n{ex.Message}";
+            MessageBox.Show(msg, "Luma", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
         }
+
+        if (token.IsCancellationRequested) return;
+
+        _sourcePixels = pixels;
+        _sourceW = w; _sourceH = h;
+        // Save originals for Revert
+        _originalPixels = (byte[])pixels.Clone();
+        _originalW = w; _originalH = h;
+        _fileName        = System.IO.Path.GetFileNameWithoutExtension(path);
+        _currentFilePath = path;
+        FileMetaText.Text = $"{System.IO.Path.GetFileName(path)}  ·  {w} × {h}";
+        _imageLoaded = true;
+        AddRecentFile(path);
+
+        EmptyState.Visibility   = Visibility.Collapsed;
+        PhotoDisplay.Visibility = Visibility.Visible;
+        ResetZoom();
+
+        // Trigger filmstrip + EXIF in background
+        _ = LoadFilmstripAsync(System.IO.Path.GetDirectoryName(path) ?? "");
+        _ = ReadExifAsync(path);
+
+        if (_cropping) CancelCrop();
+        _hasPendingCrop  = false;
+        _preCropSnapshot = null;
+        _autoNNWeights   = null;  // invalidate NN cache for the new image
+        _history.Clear(); _future.Clear();
+        ResetAll();
+        UndoCropBtn.IsEnabled = false;
+        RevertBtn.IsEnabled = true;
+        SetControlsEnabled(true);
+        MarkupCanvas.Visibility = Visibility.Collapsed;
+        DoRender();
+        if (TabCrop.IsChecked == true)
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render,
+                new Action(StartCropOverlay));
     }
 
     private void ResetAll()
@@ -526,6 +568,9 @@ public partial class MainWindow : Window
         CompareBtn.IsEnabled   = on;
         SplitViewBtn.IsEnabled = on;
         PresetsBtn.IsEnabled   = on;
+        LooksBtn.IsEnabled     = on;
+        CopySettingsBtn.IsEnabled = on;
+        PasteSettingsBtn.IsEnabled = on && _copiedLook != null;
         ExportBtn.IsEnabled    = on;
         BatchBtn.IsEnabled     = on;
         ResetCurveBtn.IsEnabled = on;
@@ -538,7 +583,9 @@ public partial class MainWindow : Window
         AspectCombo.IsEnabled  = on;
         PortraitOrientBtn.IsEnabled  = on;
         LandscapeOrientBtn.IsEnabled = on;
-        BrushSlider.IsEnabled  = on;
+        BrushSlider.IsEnabled      = on;
+        FontSizeSlider.IsEnabled   = on;
+        FontFamilyCombo.IsEnabled  = on;
         PenTool.IsEnabled    = on;
         BrushTool.IsEnabled  = on;
         EraserTool.IsEnabled = on;
@@ -546,6 +593,7 @@ public partial class MainWindow : Window
         RectTool.IsEnabled   = on;
         ArrowTool.IsEnabled  = on;
         RulerTool.IsEnabled  = on;
+        TextTool.IsEnabled   = on;
         UndoBtn.IsEnabled = _history.Count > 0 && on;
         RedoBtn.IsEnabled = _future.Count  > 0 && on;
         UndoMarkupBtn.IsEnabled  = false;
@@ -561,7 +609,7 @@ public partial class MainWindow : Window
         var dlg = new OpenFileDialog
         {
             Title  = "Open Photo",
-            Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tiff;*.gif|All files|*.*"
+            Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tiff;*.tif;*.gif;*.heic;*.heif|All files|*.*"
         };
         if (dlg.ShowDialog() == true) LoadImageFile(dlg.FileName);
     }
@@ -606,7 +654,7 @@ public partial class MainWindow : Window
         {
             BitmapEncoder encoder = ext switch
             {
-                ".jpg" or ".jpeg" => new JpegBitmapEncoder { QualityLevel = 95 },
+                ".jpg" or ".jpeg" => new JpegBitmapEncoder { QualityLevel = _jpegQuality },
                 ".tiff" or ".tif" => new TiffBitmapEncoder(),
                 _                 => new PngBitmapEncoder()
             };
@@ -791,6 +839,12 @@ public partial class MainWindow : Window
                 d = new StrokeData { Type = "rect", Color = ((SolidColorBrush)rc.Stroke).Color,
                     Thickness = rc.StrokeThickness,
                     Left = Canvas.GetLeft(rc), Top = Canvas.GetTop(rc), W = rc.Width, H = rc.Height };
+            else if (elem is TextBlock txt)
+                d = new StrokeData { Type = "text",
+                    Color = ((SolidColorBrush)txt.Foreground).Color,
+                    FontSize = txt.FontSize, FontFamilyName = txt.FontFamily.Source,
+                    Left = Canvas.GetLeft(txt), Top = Canvas.GetTop(txt),
+                    TextContent = txt.Text };
             else if (elem is Canvas grp)
             {
                 var shaft = grp.Children.OfType<Line>().FirstOrDefault();
@@ -838,6 +892,19 @@ public partial class MainWindow : Window
                     Fill = Brushes.Transparent, Width = d.W, Height = d.H };
                 Canvas.SetLeft(rc, d.Left); Canvas.SetTop(rc, d.Top);
                 return rc;
+            case "text":
+                var lbl = new TextBlock
+                {
+                    Text = d.TextContent ?? "", Foreground = brush,
+                    FontSize = d.FontSize, FontWeight = FontWeights.SemiBold,
+                    FontFamily = new FontFamily(d.FontFamilyName ?? "Arial"),
+                    TextWrapping = TextWrapping.Wrap,
+                    IsHitTestVisible = false,
+                    Effect = new System.Windows.Media.Effects.DropShadowEffect
+                        { Color = Colors.Black, BlurRadius = 4, ShadowDepth = 1, Opacity = 0.7 }
+                };
+                Canvas.SetLeft(lbl, d.Left); Canvas.SetTop(lbl, d.Top);
+                return lbl;
             case "ruler":
                 return BuildRulerCanvas(d.Color, d.Thickness, d.X1, d.Y1, d.X2, d.Y2, d.RulerText ?? "");
             case "arrow":
@@ -931,6 +998,12 @@ public partial class MainWindow : Window
                    DistToSeg(pt, new Point(l + rc.Width, t + rc.Height), new Point(l, t + rc.Height)) <= radius ||
                    DistToSeg(pt, new Point(l, t + rc.Height), new Point(l, t)) <= radius;
         }
+        if (stroke is TextBlock tb)
+        {
+            double l = Canvas.GetLeft(tb), t = Canvas.GetTop(tb);
+            return pt.X >= l - radius && pt.X <= l + tb.ActualWidth  + radius
+                && pt.Y >= t - radius && pt.Y <= t + tb.ActualHeight + radius;
+        }
         if (stroke is Canvas grp)
         {
             var shaft = grp.Children.OfType<Line>().FirstOrDefault();
@@ -938,6 +1011,75 @@ public partial class MainWindow : Window
                 return DistToSeg(pt, new Point(shaft.X1, shaft.Y1), new Point(shaft.X2, shaft.Y2)) <= radius + shaft.StrokeThickness / 2;
         }
         return false;
+    }
+
+    private static void BakeTranslate(UIElement elem, double dx, double dy)
+    {
+        elem.RenderTransform = null;
+        if (elem is Polyline poly)
+        {
+            var pts = poly.Points.ToList(); poly.Points.Clear();
+            foreach (var p in pts) poly.Points.Add(new Point(p.X + dx, p.Y + dy));
+        }
+        else if (elem is Line ln)    { ln.X1 += dx; ln.Y1 += dy; ln.X2 += dx; ln.Y2 += dy; }
+        else if (elem is Rectangle)  { Canvas.SetLeft(elem, Canvas.GetLeft(elem) + dx); Canvas.SetTop(elem, Canvas.GetTop(elem) + dy); }
+        else if (elem is TextBlock)  { Canvas.SetLeft(elem, Canvas.GetLeft(elem) + dx); Canvas.SetTop(elem, Canvas.GetTop(elem) + dy); }
+        else if (elem is Canvas grp)
+        {
+            foreach (UIElement child in grp.Children)
+            {
+                if (child is Line cln) { cln.X1 += dx; cln.Y1 += dy; cln.X2 += dx; cln.Y2 += dy; }
+                else if (child is Polygon cpoly)
+                {
+                    var pts = cpoly.Points.ToList(); cpoly.Points.Clear();
+                    foreach (var p in pts) cpoly.Points.Add(new Point(p.X + dx, p.Y + dy));
+                }
+                else if (child is TextBlock ctb) { Canvas.SetLeft(ctb, Canvas.GetLeft(ctb) + dx); Canvas.SetTop(ctb, Canvas.GetTop(ctb) + dy); }
+            }
+        }
+    }
+
+    private void LongPressTimer_Tick(object? sender, EventArgs e)
+    {
+        _longPressTimer.Stop();
+        _handDragging = true;
+        MarkupCanvas.Cursor = Cursors.SizeAll;
+    }
+
+    private void OpenTextEditor(TextBlock tb)
+    {
+        CommitTextBox();
+        PushHistory();
+        _markupStrokes.Remove(tb);
+        MarkupCanvas.Children.Remove(tb);
+
+        _markupColor = ((SolidColorBrush)tb.Foreground).Color;
+        _fontSize    = (float)tb.FontSize;
+        _fontFamily  = tb.FontFamily.Source;
+
+        _activeTextBox = new TextBox
+        {
+            Text             = tb.Text,
+            Background       = Brushes.Transparent,
+            BorderThickness  = new Thickness(1),
+            BorderBrush      = new SolidColorBrush(Color.FromArgb(140, 255, 255, 255)),
+            Foreground       = tb.Foreground,
+            CaretBrush       = tb.Foreground,
+            FontSize         = tb.FontSize,
+            FontWeight       = tb.FontWeight,
+            FontFamily       = tb.FontFamily,
+            MinWidth         = 60,
+            AcceptsReturn    = true,
+            TextWrapping     = TextWrapping.Wrap,
+            IsHitTestVisible = true,
+        };
+        Canvas.SetLeft(_activeTextBox, Canvas.GetLeft(tb));
+        Canvas.SetTop (_activeTextBox, Canvas.GetTop(tb));
+        _activeTextBox.KeyDown   += TextBox_KeyDown;
+        _activeTextBox.LostFocus += TextBox_LostFocus;
+        MarkupCanvas.Children.Add(_activeTextBox);
+        _activeTextBox.Focus();
+        _activeTextBox.SelectAll();
     }
 
     private static double Dist(Point a, Point b)
@@ -1164,9 +1306,6 @@ public partial class MainWindow : Window
                 _autoAnalysis   = analysis;
                 _autoScene      = analysis.Scene;
                 _autoBaseParams = ImageProcessor.ComputeAutoParams(analysis);
-
-                // If NN weights are already cached (Auto turned off/on again),
-                // apply the refinement immediately without another async round-trip
                 if (_autoNNWeights.HasValue)
                 {
                     _autoBaseParams = ImageProcessor.RefineWithNN(
@@ -1179,14 +1318,15 @@ public partial class MainWindow : Window
             AutoBtn.Content    = "⚡ On";
             AutoBtn.Background = new SolidColorBrush(Color.FromRgb(0x27, 0xB8, 0x4A));
 
-            AutoSubLabel.Text = "AI · analyzing…";
+            AutoSubLabel.Text = SceneLabel(_autoScene, "✓");
             AutoIntensityPanel.Visibility = Visibility.Visible;
 
             AutoIntensitySlider.Value = 0;
             AutoIntensityLabel.Text   = "Default";
             ApplyAutoAtSliderValue(0f);
 
-            _ = RunNeuralEnhancerAsync();
+            // TODO: re-enable once FiveK-trained models (expert_a/c/e.onnx) are ready.
+            // _ = RunNeuralEnhancerAsync();
         }
         else
         {
@@ -1277,11 +1417,29 @@ public partial class MainWindow : Window
                 if (!_autoEnhanceOn) return;
                 if (_autoBaseParams != null)
                 {
-                    directParams.Sharpness  = Math.Max(directParams.Sharpness,  _autoBaseParams.Sharpness);
-                    directParams.Definition = Math.Max(directParams.Definition, _autoBaseParams.Definition);
-                    directParams.Noise      = Math.Max(directParams.Noise,      _autoBaseParams.Noise);
+                    // PPR10K is portrait-only, so the NN is only reliable for Portrait scenes.
+                    // For all other scene types the NN extrapolates outside its training
+                    // distribution and produces extreme values — skip the blend entirely.
+                    if (_autoScene == SceneType.Portrait)
+                    {
+                        const float nn = 0.40f, rb = 0.60f;
+                        _autoBaseParams.Exposure    = rb * _autoBaseParams.Exposure    + nn * directParams.Exposure;
+                        _autoBaseParams.Brilliance  = rb * _autoBaseParams.Brilliance  + nn * directParams.Brilliance;
+                        _autoBaseParams.Highlights  = rb * _autoBaseParams.Highlights  + nn * directParams.Highlights;
+                        _autoBaseParams.Shadows     = rb * _autoBaseParams.Shadows     + nn * directParams.Shadows;
+                        _autoBaseParams.Contrast    = rb * _autoBaseParams.Contrast    + nn * directParams.Contrast;
+                        _autoBaseParams.Brightness  = rb * _autoBaseParams.Brightness  + nn * directParams.Brightness;
+                        _autoBaseParams.BlackPoint  = rb * _autoBaseParams.BlackPoint  + nn * directParams.BlackPoint;
+                        _autoBaseParams.Saturation  = rb * _autoBaseParams.Saturation  + nn * directParams.Saturation;
+                        _autoBaseParams.Vibrance    = rb * _autoBaseParams.Vibrance    + nn * directParams.Vibrance;
+                        _autoBaseParams.Warmth      = rb * _autoBaseParams.Warmth      + nn * directParams.Warmth;
+                        _autoBaseParams.Tint        = rb * _autoBaseParams.Tint        + nn * directParams.Tint;
+                        _autoBaseParams.Sharpness   = Math.Max(directParams.Sharpness,  _autoBaseParams.Sharpness);
+                        _autoBaseParams.Definition  = Math.Max(directParams.Definition, _autoBaseParams.Definition);
+                        _autoBaseParams.Noise       = Math.Max(directParams.Noise,      _autoBaseParams.Noise);
+                    }
+                    // Non-portrait: NN output ignored — rule-based params kept as-is.
                 }
-                _autoBaseParams = directParams;
                 AutoSubLabel.Text = SceneLabel(_autoScene, "AI ✓");
                 ApplyAutoAtSliderValue((float)AutoIntensitySlider.Value);
             });
@@ -1903,23 +2061,28 @@ public partial class MainWindow : Window
     protected override void OnMouseDown(MouseButtonEventArgs e)
     {
         base.OnMouseDown(e);
-        // Double-click anywhere on the stage resets zoom to fit
+        // Double-click toggles between fit-to-window and 100% (actual-pixel) zoom
         if (e.ClickCount == 2 && _imageLoaded && !_cropping && !_drawing)
-            ResetZoom();
+        {
+            double curScale = Math.Sqrt(_zoomMatrix.M11 * _zoomMatrix.M11 + _zoomMatrix.M12 * _zoomMatrix.M12);
+            if (curScale > 1.01) ResetZoom();
+            else                 ZoomToActualSize(e.GetPosition(ImageZoomGroup));
+        }
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
         if (_cropping) CropCanvas_MouseMove(this, e);
-        if (_drawing)  Markup_MouseMove(this, e);
+        if (_drawing || _draggedStroke != null) Markup_MouseMove(this, e);
+        UpdateFilmstripToggleFade(e.GetPosition(StageGrid).Y);
     }
 
     protected override void OnMouseUp(MouseButtonEventArgs e)
     {
         base.OnMouseUp(e);
         if (_cropping) CropCanvas_MouseUp(this, e);
-        if (_drawing)  Markup_MouseUp(this, e);
+        if (_drawing || _draggedStroke != null) Markup_MouseUp(this, e);
     }
 
     // ── Markup ──
@@ -1955,15 +2118,121 @@ public partial class MainWindow : Window
     private void MarkupTool_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not ToggleButton tb) return;
-        foreach (ToggleButton t in new[] { PenTool, BrushTool, EraserTool, LineTool, RectTool, ArrowTool, RulerTool })
-            t.IsChecked = t == tb;
+        var tools = new[] { PenTool, BrushTool, EraserTool, LineTool, RectTool, ArrowTool, RulerTool, TextTool };
+
+        // Re-tapping the active tool deselects → hand/move mode
+        if (tb.IsChecked == false)
+        {
+            CommitTextBox();
+            foreach (var t in tools) t.IsChecked = false;
+            _markupTool = "hand";
+            MarkupCanvas.Cursor = Cursors.Hand;
+            return;
+        }
+
+        CommitTextBox();
+        foreach (var t in tools) t.IsChecked = t == tb;
         _markupTool = (string)tb.Tag;
+        MarkupCanvas.Cursor = Cursors.Cross;
     }
 
     private void BrushSize_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         _brushSize = (float)e.NewValue;
         if (BrushLabel != null) BrushLabel.Text = e.NewValue.ToString("0.0");
+    }
+
+    private void BuildFontCombo()
+    {
+        var fonts = new[]
+        {
+            "Arial", "Arial Black", "Calibri", "Cambria", "Comic Sans MS",
+            "Courier New", "Georgia", "Impact", "Segoe UI", "Tahoma",
+            "Times New Roman", "Trebuchet MS", "Verdana"
+        };
+        foreach (var f in fonts)
+            FontFamilyCombo.Items.Add(new ComboBoxItem
+            {
+                Content    = f,
+                FontFamily = new FontFamily(f),
+            });
+        FontFamilyCombo.SelectedIndex = 0;
+    }
+
+    private void FontFamily_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (FontFamilyCombo.SelectedItem is ComboBoxItem item)
+            _fontFamily = item.Content.ToString() ?? "Arial";
+    }
+
+    private void FontSize_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        _fontSize = (float)e.NewValue;
+        if (FontSizeLabel != null) FontSizeLabel.Text = ((int)e.NewValue).ToString();
+    }
+
+    private void TextBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Return)
+        {
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                CommitTextBox();
+                e.Handled = true;
+            }
+            // Enter and Shift+Enter both insert newlines (AcceptsReturn=true handles it)
+        }
+        else if (e.Key == Key.Escape)
+        {
+            if (_activeTextBox != null)
+            {
+                MarkupCanvas.Children.Remove(_activeTextBox);
+                _activeTextBox = null;
+                if (_history.Count > 0) _history.Pop();
+            }
+            e.Handled = true;
+        }
+    }
+
+    private void TextBox_LostFocus(object sender, RoutedEventArgs e) => CommitTextBox();
+
+    private void CommitTextBox()
+    {
+        if (_activeTextBox == null) return;
+        var tb   = _activeTextBox;
+        _activeTextBox = null;
+        tb.KeyDown   -= TextBox_KeyDown;
+        tb.LostFocus -= TextBox_LostFocus;
+
+        if (string.IsNullOrWhiteSpace(tb.Text))
+        {
+            MarkupCanvas.Children.Remove(tb);
+            if (_history.Count > 0) _history.Pop();
+            return;
+        }
+
+        // Replace the editable TextBox with a frozen TextBlock
+        double left = Canvas.GetLeft(tb);
+        double top  = Canvas.GetTop(tb);
+        MarkupCanvas.Children.Remove(tb);
+
+        var label = new TextBlock
+        {
+            Text             = tb.Text,
+            Foreground       = tb.Foreground,
+            FontSize         = tb.FontSize,
+            FontWeight       = tb.FontWeight,
+            FontFamily       = tb.FontFamily,
+            TextWrapping     = TextWrapping.Wrap,
+            IsHitTestVisible = false,
+            Effect = new System.Windows.Media.Effects.DropShadowEffect
+                { Color = Colors.Black, BlurRadius = 4, ShadowDepth = 1, Opacity = 0.7 }
+        };
+        Canvas.SetLeft(label, left);
+        Canvas.SetTop(label,  top);
+        MarkupCanvas.Children.Add(label);
+        _markupStrokes.Add(label);
+        UndoMarkupBtn.IsEnabled = true;
     }
 
     private void PhotoDisplay_MouseDown(object sender, MouseButtonEventArgs e) { }
@@ -1973,6 +2242,55 @@ public partial class MainWindow : Window
         if (!_imageLoaded || MarkupCanvas.Visibility != Visibility.Visible) return;
         _drawing   = true;
         _drawStart = e.GetPosition(MarkupCanvas);
+
+        // Text: commit any existing text box first, then start a new one
+        if (_markupTool == "text")
+        {
+            _drawing = false;
+            CommitTextBox();
+            PushHistory();
+            var pos = e.GetPosition(MarkupCanvas);
+            _activeTextBox = new TextBox
+            {
+                Background       = Brushes.Transparent,
+                BorderThickness  = new Thickness(1),
+                BorderBrush      = new SolidColorBrush(Color.FromArgb(140, 255, 255, 255)),
+                Foreground       = new SolidColorBrush(_markupColor),
+                CaretBrush       = new SolidColorBrush(_markupColor),
+                FontSize         = _fontSize,
+                FontWeight       = FontWeights.SemiBold,
+                FontFamily       = new FontFamily(_fontFamily),
+                MinWidth         = 60,
+                AcceptsReturn    = true,
+                TextWrapping     = TextWrapping.Wrap,
+                IsHitTestVisible = true,
+            };
+            Canvas.SetLeft(_activeTextBox, pos.X);
+            Canvas.SetTop(_activeTextBox,  pos.Y);
+            _activeTextBox.KeyDown      += TextBox_KeyDown;
+            _activeTextBox.LostFocus    += TextBox_LostFocus;
+            MarkupCanvas.Children.Add(_activeTextBox);
+            _activeTextBox.Focus();
+            e.Handled = true;
+            return;
+        }
+
+        // Hand/move: short tap → edit text  |  long press / drag → move stroke
+        if (_markupTool == "hand")
+        {
+            _drawing = false;
+            _draggedStroke = _markupStrokes.LastOrDefault(s => StrokeHitsPoint(s, _drawStart, 14f));
+            if (_draggedStroke != null)
+            {
+                _dragAnchor    = _drawStart;
+                _handMouseStart = _drawStart;
+                _handDragging  = false;
+                _longPressTimer.Start();
+                MarkupCanvas.CaptureMouse();
+            }
+            e.Handled = true;
+            return;
+        }
 
         // Eraser: no history push, no new stroke — just start erasing
         if (_markupTool == "eraser")
@@ -2078,7 +2396,7 @@ public partial class MainWindow : Window
             Canvas.SetTop(_eraserCursor,  pos.Y - r);
         }
 
-        if (!_drawing) return;
+        if (!_drawing && _draggedStroke == null) return;
 
         switch (_markupTool)
         {
@@ -2109,11 +2427,44 @@ public partial class MainWindow : Window
                     rc.Height = Math.Abs(pos.Y - _drawStart.Y);
                 }
                 break;
+            case "hand":
+                if (_draggedStroke == null) break;
+                if (!_handDragging && Dist(pos, _handMouseStart) > 6)
+                {
+                    _longPressTimer.Stop();
+                    _handDragging = true;
+                    MarkupCanvas.Cursor = Cursors.SizeAll;
+                }
+                if (_handDragging)
+                    _draggedStroke.RenderTransform = new TranslateTransform(
+                        pos.X - _dragAnchor.X, pos.Y - _dragAnchor.Y);
+                break;
         }
     }
 
     private void Markup_MouseUp(object sender, MouseButtonEventArgs e)
     {
+        // ── Hand: separate path — doesn't use _drawing ──
+        if (_markupTool == "hand" && _draggedStroke != null)
+        {
+            _longPressTimer.Stop();
+            MarkupCanvas.ReleaseMouseCapture();
+            if (_handDragging)
+            {
+                if (_draggedStroke.RenderTransform is TranslateTransform tx)
+                    BakeTranslate(_draggedStroke, tx.X, tx.Y);
+            }
+            else if (_draggedStroke is TextBlock tbEdit)
+            {
+                // Short tap on text → reopen for editing
+                OpenTextEditor(tbEdit);
+            }
+            _draggedStroke = null;
+            _handDragging  = false;
+            MarkupCanvas.Cursor = Cursors.Hand;
+            return;
+        }
+
         if (!_drawing) return;
         _drawing = false;
         MarkupCanvas.ReleaseMouseCapture();
@@ -2181,6 +2532,7 @@ public partial class MainWindow : Window
 
     private void UndoMarkup_Click(object sender, RoutedEventArgs e)
     {
+        CommitTextBox();
         if (_markupStrokes.Count == 0) return;
         MarkupCanvas.Children.Remove(_markupStrokes[^1]);
         _markupStrokes.RemoveAt(_markupStrokes.Count - 1);
@@ -2189,6 +2541,7 @@ public partial class MainWindow : Window
 
     private void ClearMarkup_Click(object sender, RoutedEventArgs e)
     {
+        CommitTextBox();
         MarkupCanvas.Children.Clear();
         _markupStrokes.Clear();
         UndoMarkupBtn.IsEnabled = false;
@@ -2225,10 +2578,27 @@ public partial class MainWindow : Window
         StageGrid.Cursor = null;
     }
 
+    private void FilmstripToggle_Click(object sender, MouseButtonEventArgs e)
+    {
+        bool show = FilmstripBar.Visibility != Visibility.Visible;
+        FilmstripBar.Visibility  = show ? Visibility.Visible   : Visibility.Collapsed;
+        FilmstripRowDef.Height   = show ? new GridLength(96)   : new GridLength(0);
+        FilmstripToggleIcon.Text = show ? "▴" : "▾";
+    }
+
+    private void UpdateFilmstripToggleFade(double mouseYInStage)
+    {
+        if (!_imageLoaded) return;
+        bool near = mouseYInStage >= StageGrid.ActualHeight - 90;
+        FilmstripToggleBtn.Opacity          = near ? 0.92 : 0.0;
+        FilmstripToggleBtn.IsHitTestVisible = near;
+    }
+
     private void ResetZoom()
     {
         _zoomMatrix = Matrix.Identity;
         ImageZoomGroup.RenderTransform = Transform.Identity;
+        UpdateStatusBar();
     }
 
     private void Stage_MouseWheel(object sender, MouseWheelEventArgs e)
@@ -2259,6 +2629,7 @@ public partial class MainWindow : Window
         }
 
         ImageZoomGroup.RenderTransform = new MatrixTransform(_zoomMatrix);
+        UpdateStatusBar();
         e.Handled = true;
     }
 
@@ -2267,6 +2638,8 @@ public partial class MainWindow : Window
     // ═══════════════════════════════════════════════════════════════════════
 
     private System.Windows.Threading.DispatcherTimer? _histTimer;
+    private CancellationTokenSource? _filmstripCts;
+    private CancellationTokenSource? _loadCts;
 
     private void ScheduleHistogram()
     {
@@ -2366,6 +2739,42 @@ public partial class MainWindow : Window
             Stroke = new SolidColorBrush(Color.FromRgb(0x1A, 0x1A, 0x1F)),
             StrokeThickness = 1
         });
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // STATUS BAR
+    // ═══════════════════════════════════════════════════════════════════════
+
+    private void UpdateStatusBar()
+    {
+        if (!_imageLoaded) { StatusBar.Visibility = Visibility.Collapsed; return; }
+
+        // Dimensions — show cropped size when a crop is pending
+        int dw = _hasPendingCrop ? _pendCropW : _sourceW;
+        int dh = _hasPendingCrop ? _pendCropH : _sourceH;
+        StatusDimText.Text = $"{dw} × {dh} px";
+
+        // Zoom — M11 is the horizontal scale factor applied to ImageZoomGroup.
+        // At identity (M11=1) the Image element itself applies a Uniform stretch to fit.
+        // Actual pixel zoom = M11 * fitScale.
+        if (PhotoDisplay.Source is BitmapSource bs && StageGrid.ActualWidth > 0 && StageGrid.ActualHeight > 0)
+        {
+            double fitScale = Math.Min(StageGrid.ActualWidth  / bs.PixelWidth,
+                                       StageGrid.ActualHeight / bs.PixelHeight);
+            double zoom = _zoomMatrix.M11 * fitScale * 100.0;
+            StatusZoomText.Text = Math.Abs(_zoomMatrix.M11 - 1.0) < 0.002
+                ? "Fit"
+                : $"{zoom:0}%";
+        }
+
+        StatusBar.Visibility = Visibility.Visible;
+    }
+
+    private void JpegQuality_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        _jpegQuality = (int)e.NewValue;
+        if (JpegQualityLabel != null)
+            JpegQualityLabel.Text = $"{_jpegQuality}";
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -2694,6 +3103,26 @@ public partial class MainWindow : Window
                 ResetZoom();
                 e.Handled = true;
                 break;
+
+            case Key.C when ctrl && shift:
+                CopyLook_Click(this, new RoutedEventArgs());
+                e.Handled = true;
+                break;
+
+            case Key.V when ctrl && shift:
+                ApplyCopiedLook();
+                e.Handled = true;
+                break;
+
+            case Key.L when ctrl:
+                if (_imageLoaded) ShowLooksDialog();
+                e.Handled = true;
+                break;
+
+            case Key.R when ctrl:
+                ShowRecentMenu();
+                e.Handled = true;
+                break;
         }
     }
 
@@ -2929,7 +3358,7 @@ public partial class MainWindow : Window
             Margin = new Thickness(0, 0, 0, 14)
         });
 
-        void AddPreset(string label, string desc, string fmt, int? maxW)
+        void AddPreset(string label, string desc, string fmt, int? maxW, double upscale = 1.0)
         {
             var btn = new Button
             {
@@ -2963,7 +3392,7 @@ public partial class MainWindow : Window
             btn.Click += (_, _) =>
             {
                 dlg.Close();
-                QuickExport(fmt, maxW);
+                QuickExport(fmt, maxW, upscale);
             };
             stack.Children.Add(btn);
         }
@@ -2972,6 +3401,8 @@ public partial class MainWindow : Window
         AddPreset("Web — PNG",      "Max 1920 px wide · lossless",      "png",  1920);
         AddPreset("Print — JPEG",   "Full resolution · 95% quality",    "jpg",  null);
         AddPreset("Full — PNG",     "Full resolution · lossless",        "png",  null);
+        AddPreset("Upscale 2× — PNG", "2× resolution · high-quality resample", "png", null, 2.0);
+        AddPreset("Upscale 4× — PNG", "4× resolution · high-quality resample", "png", null, 4.0);
 
         var cancelBtn = new Button
         {
@@ -2999,7 +3430,7 @@ public partial class MainWindow : Window
         dlg.ShowDialog();
     }
 
-    private void QuickExport(string format, int? maxWidth)
+    private void QuickExport(string format, int? maxWidth, double upscale = 1.0)
     {
         if (!_imageLoaded || _sourcePixels == null) return;
 
@@ -3031,6 +3462,10 @@ public partial class MainWindow : Window
                 exportSrc = tb;
             }
 
+            // High-quality upscale (no-model "super-resolution" via Fant resampling)
+            if (upscale > 1.0)
+                exportSrc = UpscaleBitmap(exportSrc, upscale);
+
             SaveBitmapAs(exportSrc, saveDlg.FileName, format);
             ShowSaveSuccessDialog(saveDlg.FileName);
         }
@@ -3045,7 +3480,7 @@ public partial class MainWindow : Window
         BitmapEncoder enc = format switch
         {
             "png"  => new PngBitmapEncoder(),
-            _      => new JpegBitmapEncoder { QualityLevel = format == "jpg_print" ? 95 : 85 }
+            _      => new JpegBitmapEncoder { QualityLevel = format == "jpg_print" ? 95 : _jpegQuality }
         };
         enc.Frames.Add(BitmapFrame.Create(src));
         using var fs = File.Create(path);
@@ -3058,10 +3493,16 @@ public partial class MainWindow : Window
 
     private async Task LoadFilmstripAsync(string folder)
     {
+        // Cancel any in-flight filmstrip load
+        _filmstripCts?.Cancel();
+        _filmstripCts?.Dispose();
+        _filmstripCts = new CancellationTokenSource();
+        var token = _filmstripCts.Token;
+
         if (string.IsNullOrEmpty(folder) || !System.IO.Directory.Exists(folder)) return;
 
         var supportedExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { ".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".tif" };
+            { ".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".tif", ".heic", ".heif" };
 
         string[] files;
         try
@@ -3075,69 +3516,90 @@ public partial class MainWindow : Window
 
         if (files.Length < 2)
         {
-            await Dispatcher.InvokeAsync(() =>
-            {
-                FilmstripBar.Visibility = Visibility.Collapsed;
-                FilmstripRowDef.Height  = new GridLength(0);
-            });
+            if (!token.IsCancellationRequested)
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    FilmstripBar.Visibility = Visibility.Collapsed;
+                    FilmstripRowDef.Height  = new GridLength(0);
+                });
             return;
         }
 
-        // Build thumbnails on background thread
-        var thumbs = await Task.Run(() =>
-        {
-            var list = new List<(string path, BitmapImage thumb)>();
-            foreach (var f in files)
-            {
-                try
-                {
-                    var bmi = new BitmapImage();
-                    bmi.BeginInit();
-                    bmi.UriSource          = new Uri(f);
-                    bmi.DecodePixelHeight  = 72;
-                    bmi.CacheOption        = BitmapCacheOption.OnLoad;
-                    bmi.EndInit();
-                    bmi.Freeze();
-                    list.Add((f, bmi));
-                }
-                catch { }
-            }
-            return list;
-        });
-
+        // Show filmstrip immediately with placeholder tiles — no waiting for decodes
+        var placeholders = new Border[files.Length];
         await Dispatcher.InvokeAsync(() =>
         {
             FilmstripPanel.Children.Clear();
-            foreach (var (path, thumb) in thumbs)
+            for (int i = 0; i < files.Length; i++)
             {
-                bool isCurrent = string.Equals(path, _currentFilePath, StringComparison.OrdinalIgnoreCase);
-
+                bool isCurrent = string.Equals(files[i], _currentFilePath, StringComparison.OrdinalIgnoreCase);
                 var border = new Border
                 {
                     Width = 72, Height = 72, CornerRadius = new CornerRadius(6),
                     Margin = new Thickness(0, 0, 6, 0),
                     BorderThickness = new Thickness(isCurrent ? 2 : 0),
                     BorderBrush = new SolidColorBrush(Color.FromRgb(0x0A, 0x84, 0xFF)),
-                    Cursor = Cursors.Hand, Tag = path,
+                    Background = new SolidColorBrush(Color.FromRgb(0x2A, 0x2A, 0x2E)),
+                    Cursor = Cursors.Hand, Tag = files[i],
                     ClipToBounds = true,
                     Opacity = isCurrent ? 1.0 : 0.65
                 };
-                border.Child = new System.Windows.Controls.Image
-                {
-                    Source  = thumb,
-                    Stretch = System.Windows.Media.Stretch.UniformToFill
-                };
+                string capturedPath = files[i];
                 border.MouseDown += (s, _) =>
                 {
-                    if (s is Border b && b.Tag is string p)
-                        LoadImageFile(p);
+                    if (s is Border b && b.Tag is string p) LoadImageFile(p);
                 };
+                placeholders[i] = border;
                 FilmstripPanel.Children.Add(border);
             }
-
             FilmstripBar.Visibility = Visibility.Visible;
             FilmstripRowDef.Height  = new GridLength(96);
         });
+
+        if (token.IsCancellationRequested) return;
+
+        // Decode thumbnails in parallel (max 4 at once) and fill placeholders as they finish
+        var sem = new SemaphoreSlim(4);
+        var tasks = Enumerable.Range(0, files.Length).Select(i => Task.Run(async () =>
+        {
+            await sem.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                if (token.IsCancellationRequested) return;
+                BitmapImage? bmi = null;
+                try
+                {
+                    var b = new BitmapImage();
+                    b.BeginInit();
+                    b.UriSource         = new Uri(files[i]);
+                    b.DecodePixelHeight = 72;
+                    b.CacheOption       = BitmapCacheOption.OnLoad;
+                    b.EndInit();
+                    b.Freeze();
+                    bmi = b;
+                }
+                catch { /* unsupported or corrupt — leave placeholder grey */ }
+
+                if (bmi != null && !token.IsCancellationRequested)
+                {
+                    var thumb  = bmi;
+                    var border = placeholders[i];
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (token.IsCancellationRequested) return;
+                        border.Child = new System.Windows.Controls.Image
+                        {
+                            Source  = thumb,
+                            Stretch = System.Windows.Media.Stretch.UniformToFill
+                        };
+                    });
+                }
+            }
+            finally { sem.Release(); }
+        }, token)).ToArray();
+
+        await Task.WhenAll(tasks);
+        sem.Dispose();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -3368,7 +3830,7 @@ public partial class MainWindow : Window
 
                     BitmapEncoder enc = format == "png"
                         ? (BitmapEncoder)new PngBitmapEncoder()
-                        : new JpegBitmapEncoder { QualityLevel = 95 };
+                        : new JpegBitmapEncoder { QualityLevel = _jpegQuality };
                     enc.Frames.Add(BitmapFrame.Create(src));
                     using var fs = System.IO.File.Create(outPath);
                     enc.Save(fs);
@@ -3488,6 +3950,84 @@ public partial class MainWindow : Window
         tpl.VisualTree = bdFac;
         btn.Template = tpl;
         return btn;
+    }
+
+    // ── In-app update ──────────────────────────────────────────────────────────
+
+    private CancellationTokenSource? _updateCts;
+
+    /// <summary>
+    /// Runs on startup (background). Shows the update banner if a newer
+    /// GitHub Release exists. Silently does nothing when offline.
+    /// </summary>
+    private async Task CheckForUpdateAsync()
+    {
+        var info = await UpdateChecker.CheckAsync().ConfigureAwait(false);
+        if (info == null) return;
+
+        await Dispatcher.InvokeAsync(() =>
+        {
+            UpdateBannerText.Text = $"LumaPhoto {info.Version} is available";
+            UpdateBanner.Visibility = Visibility.Visible;
+
+            // Store update info on the button tag so the click handler can reach it.
+            UpdateNowBtn.Tag = info;
+
+            UpdateNowBtn.MouseLeftButtonUp  += UpdateNowBtn_Click;
+            UpdateDismissBtn.MouseLeftButtonUp += (_, _) =>
+                UpdateBanner.Visibility = Visibility.Collapsed;
+
+            // Subtle hover effects
+            UpdateNowBtn.MouseEnter += (_, _) =>
+                UpdateNowBtn.Background = new SolidColorBrush(Color.FromRgb(0x00, 0x6C, 0xD9));
+            UpdateNowBtn.MouseLeave += (_, _) =>
+                UpdateNowBtn.Background = new SolidColorBrush(Color.FromRgb(0x0A, 0x84, 0xFF));
+        });
+    }
+
+    private async void UpdateNowBtn_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (UpdateNowBtn.Tag is not UpdateInfo info) return;
+
+        // If it's a webpage URL (no .exe asset found), just open the browser.
+        if (!info.DownloadUrl.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = info.DownloadUrl, UseShellExecute = true
+            });
+            return;
+        }
+
+        // Disable the button during download.
+        UpdateNowBtn.MouseLeftButtonUp -= UpdateNowBtn_Click;
+        UpdateNowBtn.Cursor = System.Windows.Input.Cursors.Wait;
+
+        _updateCts = new CancellationTokenSource();
+        var progress = new Progress<int>(pct =>
+            UpdateNowText.Text = $"Downloading… {pct}%");
+
+        string? installer = await UpdateChecker
+            .DownloadInstallerAsync(info.DownloadUrl, progress, _updateCts.Token)
+            .ConfigureAwait(true);   // resume on UI thread
+
+        if (installer == null)
+        {
+            // Download failed — open the releases page instead.
+            UpdateNowText.Text = "Update now";
+            UpdateNowBtn.Cursor = System.Windows.Input.Cursors.Hand;
+            UpdateNowBtn.MouseLeftButtonUp += UpdateNowBtn_Click;
+            UpdateNowBtn.Tag = info with { DownloadUrl =
+                $"https://github.com/{AppVersion.GitHubRepo}/releases/latest" };
+            return;
+        }
+
+        // Launch installer silently then close this instance so the exe can be replaced.
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = installer, Arguments = "/SILENT /NORESTART", UseShellExecute = true
+        });
+        Application.Current.Shutdown();
     }
 
 }

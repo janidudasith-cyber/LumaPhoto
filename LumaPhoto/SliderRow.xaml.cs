@@ -47,6 +47,28 @@ public partial class SliderRow : UserControl
         ValueSlider.AddHandler(System.Windows.Controls.Primitives.Thumb.DragCompletedEvent,
             new System.Windows.Controls.Primitives.DragCompletedEventHandler(
                 (_, _) => DragCompleted?.Invoke(this, EventArgs.Empty)));
+
+        // Arrow keys nudge ±1, Shift+arrows ±10 (with one undo entry per key press)
+        ValueSlider.PreviewKeyDown += SliderNudge_PreviewKeyDown;
+    }
+
+    private void SliderNudge_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (!ValueSlider.IsEnabled) return;
+        int dir = e.Key switch
+        {
+            Key.Left  or Key.Down => -1,
+            Key.Right or Key.Up   => +1,
+            _ => 0
+        };
+        if (dir == 0) return;
+
+        double step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0
+            ? ValueSlider.LargeChange : ValueSlider.SmallChange;
+        if (!e.IsRepeat) CommitChange?.Invoke(this, EventArgs.Empty);  // one history push per press
+        double nv = Math.Clamp(ValueSlider.Value + dir * step, ValueSlider.Minimum, ValueSlider.Maximum);
+        ValueSlider.Value = nv;  // fires Slider_Changed → Changed → render
+        e.Handled = true;
     }
 
     private bool _suppressEvent;

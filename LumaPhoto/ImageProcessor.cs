@@ -213,23 +213,21 @@ public static class ImageProcessor
         else if (lStdDev > 60f && darkRatio > 0.10f && brightRatio > 0.10f)
             scene = SceneType.HDR;
 
-        // Strong landscape: very dominant sky or green — checked BEFORE Portrait so
-        // that blue-sky or lush landscapes are never misread as skin-tone photos.
-        else if (skyRatio > 0.22f || greenRatio > 0.30f)
-            scene = SceneType.Landscape;
-
-        // Portrait: skin tones are the strongest cue.
-        // Guards:
-        //   - Landscape signals must be absent (sky, green)
-        //   - Warm ratio must not dominate — red rock, sand, autumn foliage
-        //     all have warmRatio > 0.08 without real skin
-        //   - skinRatio raised 0.12→0.17: requires more skin coverage before
-        //     committing, reducing false positives on earthy landscapes
-        else if (skinRatio > 0.17f && skyRatio < 0.12f && greenRatio < 0.18f && warmRatio < 0.08f)
+        // Portrait: skin must genuinely dominate the frame (raised from 0.13 → 0.18
+        // so a small person in a landscape or ambient warm tones don't falsely qualify).
+        // Also require skin to outweigh greenery — a person in a garden is not a portrait.
+        // warmRatio guard raised to 0.10 to better exclude earthy/sandy tones.
+        else if (skinRatio > 0.18f && skinRatio > greenRatio && warmRatio < 0.10f)
             scene = SceneType.Portrait;
 
-        // Sunset / golden hour: dominant warm cast, mid-range brightness
-        else if (warmRatio > 0.12f && lMean > 70 && lMean < 165)
+        // Strong landscape: very dominant sky or green with no significant skin.
+        else if ((skyRatio > 0.22f || greenRatio > 0.30f) && skinRatio < 0.10f)
+            scene = SceneType.Landscape;
+
+        // Sunset / golden hour: warmRatio raised from 0.12 → 0.22 and lMean range
+        // tightened (60–140) so yellow walls, amber interiors, and autumn foliage
+        // don't trigger this — real sunsets have very dominant warm pixel counts.
+        else if (warmRatio > 0.22f && lMean > 60 && lMean < 140)
             scene = SceneType.Sunset;
 
         // Landscape: sky-blue or green-vegetation dominant (moderate signals)

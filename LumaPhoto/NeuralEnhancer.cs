@@ -114,6 +114,10 @@ public sealed class NeuralEnhancer : IDisposable
     // Number of parameters the trained model outputs
     private const int NumParams = 15;
 
+    // Directory where the app searched for model files (exposed for diagnostics)
+    internal string SearchDir  { get; private set; } = "";
+    internal string LoadError  { get; private set; } = "";
+
     /// <summary>True when the trained parameter-prediction model is loaded.</summary>
     public bool HasParamModel => _paramSession != null;
 
@@ -122,7 +126,9 @@ public sealed class NeuralEnhancer : IDisposable
 
     public NeuralEnhancer()
     {
-        var dir = AppDomain.CurrentDomain.BaseDirectory;
+        // Search candidate directories in priority order — single-file exes can
+        // report different base paths depending on how .NET extracts them.
+        var dir = FindModelDir();
 
         // ── Try to load the trained parameter-prediction model first ──────────
         var paramPath = Path.Combine(dir, "enhancer_params.onnx");
@@ -133,8 +139,9 @@ public sealed class NeuralEnhancer : IDisposable
                 _paramSession   = new InferenceSession(paramPath);
                 _paramInputName = _paramSession.InputMetadata.Keys.First();
             }
-            catch
+            catch (Exception ex)
             {
+                LoadError = ex.Message;
                 _paramSession?.Dispose();
                 _paramSession = null;
             }
@@ -343,6 +350,35 @@ public sealed class NeuralEnhancer : IDisposable
             result[i] = line.Replace('/', '_');
         }
         return result;
+    }
+
+    private string FindModelDir()
+    {
+        // Try every plausible location — single-file .NET apps can report different
+        // base paths depending on extraction mode and how the process was launched.
+        var candidates = new[]
+        {
+            Path.GetDirectoryName(Environment.ProcessPath),
+            Path.GetDirectoryName(System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName),
+            AppContext.BaseDirectory,
+            AppDomain.CurrentDomain.BaseDirectory,
+            Directory.GetCurrentDirectory(),
+        };
+
+        foreach (var c in candidates)
+        {
+            if (string.IsNullOrEmpty(c)) continue;
+            if (File.Exists(Path.Combine(c, "enhancer_params.onnx")) ||
+                File.Exists(Path.Combine(c, "places365_mobilenet.onnx")))
+            {
+                SearchDir = c;
+                return c;
+            }
+        }
+
+        // Fall back to the first non-empty candidate even if no model found
+        SearchDir = candidates.FirstOrDefault(c => !string.IsNullOrEmpty(c)) ?? "";
+        return SearchDir;
     }
 
     public void Dispose()
