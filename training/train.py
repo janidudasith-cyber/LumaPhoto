@@ -2,8 +2,8 @@
 Train the LumaPhoto PhotoEnhancerNet on one or more enhancement datasets.
 
 Quick start:
-    # With FiveK + synthetic data from any photos folder:
-    python train.py --fivek_root ./data/fivek --synthetic_dirs ./data/photos
+    # Natural/balanced Auto Enhance model (recommended first run):
+    python train.py --fivek_root ./data/fivek --fivek_expert c --synthetic_dirs ./data/photos
 
     # Multi-dataset:
     python train.py \\
@@ -88,6 +88,7 @@ def train(args):
     # ── Data ──────────────────────────────────────────────────────────────────
     train_ds = build_dataset(
         fivek_root     = args.fivek_root,
+        fivek_expert   = args.fivek_expert,
         ppr10k_root    = args.ppr10k_root,
         dped_root      = args.dped_root,
         lol_root       = args.lol_root,
@@ -234,6 +235,8 @@ def parse_args():
 
     # Dataset sources
     p.add_argument("--fivek_root",     type=str, default=None)
+    p.add_argument("--fivek_expert",   type=str, default="c",
+                   help="FiveK target expert folder: c/expertC for natural, a/expertA for vibrant, e/expertE for dramatic")
     p.add_argument("--ppr10k_root",    type=str, default=None)
     p.add_argument("--dped_root",      type=str, default=None)
     p.add_argument("--lol_root",       type=str, default=None)

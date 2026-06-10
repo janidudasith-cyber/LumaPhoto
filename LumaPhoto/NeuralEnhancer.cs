@@ -1,5 +1,6 @@
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 
@@ -101,6 +102,8 @@ public sealed class NeuralEnhancer : IDisposable
     // ── Mode 1: direct parameter prediction ──────────────────────────────────
     private InferenceSession? _paramSession;
     private string?           _paramInputName;
+    private readonly Dictionary<string, (InferenceSession session, string inputName)> _expertParamSessions =
+        new(StringComparer.OrdinalIgnoreCase);
 
     // ── Mode 2: Places365 scene classification ────────────────────────────────
     private InferenceSession? _sceneSession;
@@ -119,7 +122,26 @@ public sealed class NeuralEnhancer : IDisposable
     internal string LoadError  { get; private set; } = "";
 
     /// <summary>True when the trained parameter-prediction model is loaded.</summary>
-    public bool HasParamModel => _paramSession != null;
+    public bool HasParamModel => _paramSession != null || _expertParamSessions.Count > 0;
+
+    /// <summary>True when the dramatic, natural, and bright FiveK endpoints are all loaded.</summary>
+    public bool HasExpertModels =>
+        _expertParamSessions.ContainsKey("e") &&
+        _expertParamSessions.ContainsKey("c") &&
+        _expertParamSessions.ContainsKey("a");
+
+    internal string ModelStatus
+    {
+        get
+        {
+            if (HasExpertModels) return "FiveK E/C/A";
+            if (_expertParamSessions.ContainsKey("c")) return "FiveK C";
+            if (_expertParamSessions.Count > 0) return "FiveK partial";
+            if (_paramSession != null) return "Single ONNX";
+            if (_sceneSession != null && _labels != null) return "Scene classifier";
+            return "Rules only";
+        }
+    }
 
     /// <summary>True when at least one model (param-prediction or scene) is loaded.</summary>
     public bool IsLoaded => HasParamModel || (_sceneSession != null && _labels != null);
@@ -130,9 +152,13 @@ public sealed class NeuralEnhancer : IDisposable
         // report different base paths depending on how .NET extracts them.
         var dir = FindModelDir();
 
+        TryLoadExpertParamModel(dir, "e", "fivek_expert_e.onnx");
+        TryLoadExpertParamModel(dir, "c", "fivek_expert_c.onnx");
+        TryLoadExpertParamModel(dir, "a", "fivek_expert_a.onnx");
+
         // ── Try to load the trained parameter-prediction model first ──────────
         var paramPath = Path.Combine(dir, "enhancer_params.onnx");
-        if (File.Exists(paramPath))
+        if (_expertParamSessions.Count == 0 && File.Exists(paramPath) && IsTrustedParamModel(paramPath, null))
         {
             try
             {
@@ -170,6 +196,58 @@ public sealed class NeuralEnhancer : IDisposable
         }
     }
 
+    private void TryLoadExpertParamModel(string dir, string expert, string fileName)
+    {
+        var paramPath = Path.Combine(dir, fileName);
+        if (!File.Exists(paramPath) || !IsTrustedParamModel(paramPath, expert)) return;
+
+        try
+        {
+            var session = new InferenceSession(paramPath);
+            _expertParamSessions[expert] = (session, session.InputMetadata.Keys.First());
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+    }
+
+    private bool IsTrustedParamModel(string paramPath, string? expectedExpert)
+    {
+        string manifestPath = Path.ChangeExtension(paramPath, ".json");
+        if (!File.Exists(manifestPath))
+        {
+            LoadError = "enhancer_params.onnx ignored: missing enhancer_params.json training manifest.";
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(manifestPath));
+            var root = doc.RootElement;
+            string profile = root.TryGetProperty("training_profile", out var p) ? p.GetString() ?? "" : "";
+            int paramCount = root.TryGetProperty("param_count", out var c) ? c.GetInt32() : 0;
+            string expert = root.TryGetProperty("expert", out var e) ? e.GetString() ?? "" : "";
+
+            if (!profile.Equals("fivek-v2", StringComparison.OrdinalIgnoreCase) || paramCount != NumParams)
+            {
+                LoadError = "enhancer_params.onnx ignored: model manifest is not a LumaPhoto FiveK v2 parameter model.";
+                return false;
+            }
+            if (expectedExpert != null && !expert.Equals(expectedExpert, StringComparison.OrdinalIgnoreCase))
+            {
+                LoadError = $"{Path.GetFileName(paramPath)} ignored: manifest expert is '{expert}', expected '{expectedExpert}'.";
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LoadError = $"enhancer_params.onnx ignored: invalid model manifest ({ex.Message}).";
+            return false;
+        }
+    }
+
     // ── Public API ────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -179,12 +257,15 @@ public sealed class NeuralEnhancer : IDisposable
     /// Returns null when the param model is not loaded or inference fails.
     /// </summary>
     public AdjustmentState? PredictParams(byte[] bgra, int width, int height)
+        => PredictParams(bgra, width, height, null);
+
+    public AdjustmentState? PredictParams(byte[] bgra, int width, int height, string? expert)
     {
-        if (!HasParamModel) return null;
+        if (!TryGetParamSession(expert, out var session, out var inputName)) return null;
         try
         {
             // Full-image prediction
-            var p0 = RunParamInference(PreprocessRegion(bgra, width, height, 0, 0, width, height));
+            var p0 = RunParamInference(session, inputName, PreprocessRegion(bgra, width, height, 0, 0, width, height));
             if (p0 == null) return null;
 
             // Center 80% crop — improves portrait / centered-subject accuracy
@@ -192,7 +273,7 @@ public sealed class NeuralEnhancer : IDisposable
             int cy = (int)(height * 0.1f);
             int cw = (int)(width  * 0.8f);
             int ch = (int)(height * 0.8f);
-            var p1 = RunParamInference(PreprocessRegion(bgra, width, height, cx, cy, cw, ch));
+            var p1 = RunParamInference(session, inputName, PreprocessRegion(bgra, width, height, cx, cy, cw, ch));
             if (p1 == null) return p0;
 
             // Average predictions; keep vignette from full-image only (it depends on borders)
@@ -218,10 +299,35 @@ public sealed class NeuralEnhancer : IDisposable
         catch { return null; }
     }
 
-    private AdjustmentState? RunParamInference(DenseTensor<float> tensor)
+    private bool TryGetParamSession(string? expert, out InferenceSession session, out string inputName)
     {
-        var inputs = new[] { NamedOnnxValue.CreateFromTensor(_paramInputName!, tensor) };
-        using var results = _paramSession!.Run(inputs);
+        if (expert != null && _expertParamSessions.TryGetValue(expert, out var expertModel))
+        {
+            session = expertModel.session;
+            inputName = expertModel.inputName;
+            return true;
+        }
+        if (_expertParamSessions.TryGetValue("c", out var centerModel))
+        {
+            session = centerModel.session;
+            inputName = centerModel.inputName;
+            return true;
+        }
+        if (_paramSession != null && _paramInputName != null)
+        {
+            session = _paramSession;
+            inputName = _paramInputName;
+            return true;
+        }
+        session = null!;
+        inputName = "";
+        return false;
+    }
+
+    private AdjustmentState? RunParamInference(InferenceSession session, string inputName, DenseTensor<float> tensor)
+    {
+        var inputs = new[] { NamedOnnxValue.CreateFromTensor(inputName, tensor) };
+        using var results = session.Run(inputs);
         var raw = results[0].AsEnumerable<float>().ToArray();
         return raw.Length >= NumParams ? RawToState(raw) : null;
     }
@@ -369,6 +475,7 @@ public sealed class NeuralEnhancer : IDisposable
         {
             if (string.IsNullOrEmpty(c)) continue;
             if (File.Exists(Path.Combine(c, "enhancer_params.onnx")) ||
+                File.Exists(Path.Combine(c, "fivek_expert_c.onnx")) ||
                 File.Exists(Path.Combine(c, "places365_mobilenet.onnx")))
             {
                 SearchDir = c;
@@ -384,6 +491,8 @@ public sealed class NeuralEnhancer : IDisposable
     public void Dispose()
     {
         _paramSession?.Dispose();
+        foreach (var entry in _expertParamSessions.Values)
+            entry.session.Dispose();
         _sceneSession?.Dispose();
     }
 

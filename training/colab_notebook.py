@@ -1,52 +1,46 @@
 # =============================================================================
 # LumaPhoto — Google Colab Training Notebook
-# Train PhotoEnhancerNet on PPR10K + MIT-FiveK + DIV2K → export enhancer_params.onnx
+# Train PhotoEnhancerNet on MIT-FiveK (one model per expert, sequentially)
+# → exports fivek_expert_<x>.onnx for each expert in EXPERTS
 #
 # HOW TO USE
 # ──────────
 # 1. Go to https://colab.research.google.com → New Notebook
 # 2. Runtime → Change runtime type → GPU (T4)
 # 3. Paste this entire file into a single code cell and run it.
+#    It trains every expert in EXPERTS, one after the other, and exports
+#    each ONNX as soon as that expert finishes — a session disconnect never
+#    loses a completed expert.
+#
+# SKIP / RESUME BEHAVIOUR
+#   • If fivek_expert_<x>.onnx already exists on Drive → that expert is SKIPPED.
+#   • If last_expert_<x>.pt exists on Drive → that expert RESUMES mid-training.
+#   • So you can just re-run this cell after any disconnect and it picks up
+#     exactly where it left off.
 #
 # DATASETS
-#   PPR10K   — 11 161 portrait pairs (Expert A).  Required.
-#              Set PPR10K_SOURCE_URL + PPR10K_TARGET_URL below.
-#   FiveK    — 5 000 diverse-scene pairs (Expert C: landscapes, cities, indoors…).
-#              Strongly recommended — teaches the model non-portrait scenes.
-#              Two ways to get it:
-#                A) Kaggle (easiest):
-#                   1. Create a free account at kaggle.com
-#                   2. Profile → Settings → API → Create New Token → kaggle.json downloaded
-#                   3. Upload kaggle.json to your Google Drive root
-#                   4. Set FIVEK_KAGGLE = True below
-#                B) Manual (if you already have it):
-#                   Download from https://data.csail.mit.edu/graphics/fivek/
-#                   Organise as: fivek/input/ and fivek/expertC/
-#                   Upload the folder to Google Drive
-#                   Set FIVEK_DRIVE_PATH to the Drive path below
+#   FiveK    — 5 000 diverse-scene pairs per expert (raw/ + a/ c/ e/ folders).
+#              Kaggle: add KAGGLE_API_TOKEN to Colab Secrets (🔑 left sidebar),
+#              or upload legacy kaggle.json to your Google Drive root.
 #   DIV2K    — 800 diverse images used as synthetic augmentation.  Auto-downloaded.
 #
-# OUTPUT
-#   enhancer_params.onnx is saved to your Google Drive at:
-#   My Drive/LumaPhoto/enhancer_params.onnx
-#   Download it and place it next to LumaPhoto.exe
+# OUTPUT (per expert, saved to My Drive/LumaPhoto/)
+#   fivek_expert_c.onnx  ← natural  (Auto Enhance slider centre)
+#   fivek_expert_a.onnx  ← vibrant  (slider right)
+#   fivek_expert_e.onnx  ← dramatic (slider left)
 #
 # EXPECTED TIME (Colab T4)
-#   PPR10K only              ~2–3 h / 60 ep
-#   PPR10K + FiveK           ~4–5 h / 60 ep  (recommended)
+#   ~2–3 h per expert / 60 ep  → all three ≈ 7–9 h total (multiple sessions OK)
 # =============================================================================
 
 # ── Expert selection ──────────────────────────────────────────────────────────
-# Train one model per expert, then all three power the Auto Enhance slider:
+# All three power the Auto Enhance slider:
 #   slider right (+100) → Expert A  (vibrant / punchy)
-#   slider middle (  0) → Expert C  (natural / balanced)  ← start here
+#   slider middle (  0) → Expert C  (natural / balanced)
 #   slider left  (-100) → Expert E  (moody / dramatic)
-#
-# Run this notebook three times, changing EXPERT each time:
-#   First run:  EXPERT = "c"  → saves fivek_expert_c.onnx  (natural default)
-#   Second run: EXPERT = "a"  → saves fivek_expert_a.onnx  (vibrant)
-#   Third run:  EXPERT = "e"  → saves fivek_expert_e.onnx  (dramatic)
-EXPERT = "c"   # <── change to "a" or "e" for the other two runs
+# Trained in list order. Experts whose .onnx already exists on Drive are skipped.
+EXPERTS       = ["c", "a", "e"]
+FORCE_RETRAIN = []   # e.g. ["c"] to retrain an expert even if its .onnx exists
 
 # ── MIT-FiveK config ──────────────────────────────────────────────────────────
 # Option A: auto-download from Kaggle (needs kaggle.json on your Drive root)
@@ -91,13 +85,24 @@ if not torch.cuda.is_available():
     print("⚠  No GPU found. Runtime → Change runtime type → GPU")
 
 # ── 3. Validate expert config ─────────────────────────────────────────────────
-EXPERT = EXPERT.lower().strip()
-assert EXPERT in ("a", "b", "c", "d", "e"), f"EXPERT must be a/b/c/d/e, got: {EXPERT}"
 # Dataset folder names: raw/ = input originals, a/b/c/d/e/ = expert retouches
-EXPERT_DIR   = EXPERT          # folder is just "c", "a", "e" etc.
-INPUT_DIR    = "raw"           # original images folder
-ONNX_NAME    = f"fivek_expert_{EXPERT}.onnx"
-print(f"Training FiveK Expert {EXPERT.upper()} → will save as {ONNX_NAME}")
+EXPERTS       = [e.lower().strip() for e in EXPERTS]
+FORCE_RETRAIN = [e.lower().strip() for e in FORCE_RETRAIN]
+for e in EXPERTS:
+    assert e in ("a", "b", "c", "d", "e"), f"EXPERTS entries must be a/b/c/d/e, got: {e}"
+
+def onnx_name(expert):  return f"fivek_expert_{expert}.onnx"
+def is_done(expert):
+    return (DRIVE_OUT / onnx_name(expert)).exists() and expert not in FORCE_RETRAIN
+
+todo = [e for e in EXPERTS if not is_done(e)]
+done = [e for e in EXPERTS if is_done(e)]
+if done:
+    print(f"Already trained (onnx on Drive, skipping): {', '.join(e.upper() for e in done)}")
+if not todo:
+    raise SystemExit("All experts already trained — nothing to do. "
+                     "Add an expert to FORCE_RETRAIN to retrain it.")
+print(f"Training queue: {' → '.join(e.upper() for e in todo)}")
 
 # ── 4. Download DIV2K for synthetic augmentation ──────────────────────────────
 DIV2K_DIR = Path("/content/div2k")
@@ -198,32 +203,21 @@ else:
     print("FiveK: skipped (set FIVEK_KAGGLE=True or FIVEK_DRIVE_PATH to enable)")
     print("       Training will proceed with PPR10K + DIV2K only.")
 
-def _find_fivek_layout_expert(base: Path, expert_dir: str):
-    """Return directory containing input/ and <expert_dir>/ subdirs, or None."""
-    if (base / "input").exists() and (base / expert_dir).exists():
-        return base
-    for child in sorted(base.iterdir()):
-        if child.is_dir() and (child / "input").exists() and (child / expert_dir).exists():
-            return child
-    return None
-
-fivek_ok = False
-if FIVEK_ROOT.exists():
-    found = _find_fivek_layout_expert(FIVEK_ROOT, EXPERT_DIR)
-    if found:
-        FIVEK_ROOT = found
-        fivek_ok   = True
-        n_input  = len(list((FIVEK_ROOT / "input").iterdir()))
-        n_expert = len(list((FIVEK_ROOT / EXPERT_DIR).iterdir()))
-        print(f"FiveK Expert {EXPERT.upper()}: {n_input} input  |  {n_expert} target images ✓")
-    else:
-        print(f"⚠  FiveK found but missing '{EXPERT_DIR}/' folder.")
-        print(f"   Available folders: {[p.name for p in FIVEK_ROOT.iterdir() if p.is_dir()]}")
-
-if not fivek_ok:
+if not FIVEK_ROOT.exists() or _find_fivek_layout(FIVEK_ROOT) is None:
     raise RuntimeError(
         "FiveK dataset not found. Set FIVEK_KAGGLE=True or FIVEK_DRIVE_PATH above."
     )
+FIVEK_ROOT = _find_fivek_layout(FIVEK_ROOT)
+FIVEK_INPUT = FIVEK_ROOT / ("raw" if (FIVEK_ROOT / "raw").exists() else "input")
+n_input = len(list(FIVEK_INPUT.iterdir()))
+print(f"FiveK input ({FIVEK_INPUT.name}/): {n_input} images")
+for e in todo:
+    tgt = FIVEK_ROOT / e
+    if not tgt.exists():
+        print(f"⚠  Missing target folder for Expert {e.upper()}: {tgt}")
+        print(f"   Available: {[p.name for p in FIVEK_ROOT.iterdir() if p.is_dir()]}")
+        raise RuntimeError(f"Expert {e.upper()} folder not found in dataset")
+    print(f"  Expert {e.upper()}: {len(list(tgt.iterdir()))} target images ✓")
 
 
 # ── 5. Dataset loaders ────────────────────────────────────────────────────────
@@ -246,24 +240,6 @@ def _sync_crop_flip(inp, tgt, crop, flip):
     torch.manual_seed(seed); random.seed(seed); inp_t = aug(_to_tensor(inp))
     torch.manual_seed(seed); random.seed(seed); tgt_t = aug(_to_tensor(tgt))
     return inp_t, tgt_t
-
-
-class PPR10KDataset(Dataset):
-    def __init__(self, root, experts=("a",), crop=256):
-        src   = Path(root) / "source"
-        tdirs = [Path(root) / f"target_{e}" for e in experts]
-        names = sorted(f.name for f in src.iterdir() if f.suffix.lower() in EXTS)
-        self.pairs = [(src/n, td/n) for n in names for td in tdirs if (td/n).exists()]
-        self.crop  = crop
-        print(f"  PPR10K: {len(self.pairs):,} pairs (expert A)")
-
-    def __len__(self): return len(self.pairs)
-
-    def __getitem__(self, idx):
-        inp_p, tgt_p = self.pairs[idx]
-        inp  = _resize_min(Image.open(inp_p).convert("RGB"), 288)
-        tgt  = Image.open(tgt_p).convert("RGB").resize(inp.size, Image.BICUBIC)
-        return _sync_crop_flip(inp, tgt, self.crop, random.random() > 0.5)
 
 
 class FiveKDataset(Dataset):
@@ -317,24 +293,19 @@ class SyntheticDataset(Dataset):
         return self._degrade(clean.clone()), clean
 
 
-# Build combined dataset
-print("Building dataset…")
-datasets = []
+BATCH = 16
 
-ds = FiveKDataset(FIVEK_ROOT, EXPERT_DIR); datasets.append(ds)
-
-if Path(DIV2K_IMAGES).exists():
-    ds = SyntheticDataset(DIV2K_IMAGES, max_images=800); datasets.append(ds)
-    print(f"  Synthetic: {len(ds):,} images (DIV2K augmentation)")
-
-full_ds = datasets[0] if len(datasets) == 1 else ConcatDataset(datasets)
-total   = sum(len(d) for d in datasets)
-print(f"\nTotal: {total:,} training pairs  (Expert {EXPERT.upper()} target style)")
-
-BATCH  = 16
-loader = DataLoader(full_ds, batch_size=BATCH, shuffle=True,
-                    num_workers=2, pin_memory=True, drop_last=True)
-print(f"Batches/epoch: {len(loader):,}  |  Batch size: {BATCH}")
+def build_loader(expert):
+    """Fresh DataLoader targeting the given expert's retouches."""
+    datasets = [FiveKDataset(FIVEK_ROOT, expert)]
+    if Path(DIV2K_IMAGES).exists():
+        ds = SyntheticDataset(DIV2K_IMAGES, max_images=800); datasets.append(ds)
+        print(f"  Synthetic: {len(ds):,} images (DIV2K augmentation)")
+    full_ds = datasets[0] if len(datasets) == 1 else ConcatDataset(datasets)
+    total   = sum(len(d) for d in datasets)
+    print(f"  Total: {total:,} training pairs  (Expert {expert.upper()} target style)")
+    return DataLoader(full_ds, batch_size=BATCH, shuffle=True,
+                      num_workers=2, pin_memory=True, drop_last=True)
 
 
 # ── 6. Model ──────────────────────────────────────────────────────────────────
@@ -480,7 +451,7 @@ class EMA:
     def state_dict(self): return self.shadow
 
 
-# ── 10. Training ──────────────────────────────────────────────────────────────
+# ── 10. Training + export, one expert at a time ───────────────────────────────
 
 EPOCHS    = 60
 LR        = 3e-4
@@ -488,121 +459,158 @@ WARMUP_EP = 3
 CKPT_DIR  = Path("/content/checkpoints")
 CKPT_DIR.mkdir(exist_ok=True)
 
-model = PhotoEnhancerNet(pretrained=True).to(DEVICE)
-vgg   = VGGLoss().to(DEVICE)
-ema   = EMA(model)
-
-optimizer = torch.optim.AdamW([
-    {"params": model.backbone.parameters(),  "lr": LR*0.1},
-    {"params": list(model.head_in.parameters()) +
-               list(model.head_res.parameters()) +
-               list(model.head_out.parameters()) +
-               list(model.region_proj.parameters()) +
-               list(model.stats_enc.parameters()), "lr": LR},
-], weight_decay=1e-4)
-
-total_steps  = EPOCHS * len(loader)
-warmup_steps = WARMUP_EP * len(loader)
-
-def lr_lambda(step):
-    if step < warmup_steps: return step / max(1, warmup_steps)
-    prog = (step-warmup_steps) / max(1, total_steps-warmup_steps)
-    return max(1e-3, 0.5*(1.0+math.cos(math.pi*prog)))
-
-scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-scaler    = torch.amp.GradScaler("cuda", enabled=torch.cuda.is_available())
-
-best_loss  = math.inf
-start_epoch = 0
-
-# ── Resume from checkpoint if available ──────────────────────────────────────
-# Each expert gets its own checkpoint so runs don't collide on Drive
-CKPT_SUFFIX = f"_expert_{EXPERT}"
-resume_path = DRIVE_OUT / f"last{CKPT_SUFFIX}.pt"
-if resume_path.exists():
-    print(f"Resuming from {resume_path} …")
-    ckpt = torch.load(resume_path, map_location=DEVICE)
-    model.load_state_dict(ckpt["model"])
-    ema.shadow = ckpt["ema"]
-    optimizer.load_state_dict(ckpt["optimizer"])
-    scheduler.load_state_dict(ckpt["scheduler"])
-    best_loss   = ckpt.get("best_loss", math.inf)
-    start_epoch = ckpt["epoch"] + 1
-    print(f"  Resumed at epoch {start_epoch+1}/{EPOCHS}  |  best so far: {best_loss:.4f}")
-else:
-    print(f"\nStarting training — {EPOCHS} epochs, {len(loader)} batches/epoch")
-    print(f"Estimated time on T4: {EPOCHS*len(loader)*BATCH/300/3600:.1f} hours")
-
-t_start = time.time()
-
-for epoch in range(start_epoch, EPOCHS):
-    model.train()
-    epoch_loss = 0.0
-    t0 = time.time()
-
-    for inp, tgt in loader:
-        inp = inp.to(DEVICE, non_blocking=True)
-        tgt = tgt.to(DEVICE, non_blocking=True)
-        model_inp = F.interpolate(inp,(224,224),mode="bilinear",align_corners=False)
-        model_inp = (model_inp - MEAN_T) / STD_T
-
-        optimizer.zero_grad(set_to_none=True)
-        with torch.amp.autocast("cuda", enabled=torch.cuda.is_available()):
-            params = model(model_inp)
-            pred   = apply_params(inp, params)
-            loss   = F.l1_loss(pred,tgt) + 0.10*vgg(pred,tgt) + 0.50*ssim_loss(pred,tgt) + 0.20*color_moment_loss(pred,tgt)
-
-        scaler.scale(loss).backward()
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        scaler.step(optimizer)
-        scaler.update()
-        scheduler.step()
-        ema.update(model)
-        epoch_loss += loss.item()
-
-    avg     = epoch_loss / len(loader)
-    elapsed = time.time() - t0
-    remaining = (EPOCHS-epoch-1)*elapsed/3600
-    print(f"Ep {epoch+1:02d}/{EPOCHS}  loss={avg:.4f}  ({elapsed:.0f}s/ep, ~{remaining:.1f}h left)")
-
-    # Save to local + Google Drive so a session reset doesn't lose progress
-    ckpt = {"epoch":epoch,"model":model.state_dict(),"ema":ema.state_dict(),
-            "optimizer":optimizer.state_dict(),"scheduler":scheduler.state_dict(),"best_loss":best_loss}
-    torch.save(ckpt, CKPT_DIR/f"last{CKPT_SUFFIX}.pt")
-    torch.save(ckpt, DRIVE_OUT/f"last{CKPT_SUFFIX}.pt")   # Drive backup
-
-    if avg < best_loss:
-        best_loss = avg
-        torch.save(ema.state_dict(), CKPT_DIR/f"best{CKPT_SUFFIX}.pt")
-        torch.save(ema.state_dict(), DRIVE_OUT/f"best{CKPT_SUFFIX}.pt")   # Drive backup
-        print(f"  ↳ New best (EMA weights): {best_loss:.4f}")
-
-print(f"\nTraining complete in {(time.time()-t_start)/3600:.2f}h  |  Best loss: {best_loss:.4f}")
-
-
-# ── 11. Export ONNX ───────────────────────────────────────────────────────────
-
-ONNX_PATH = str(DRIVE_OUT / ONNX_NAME)   # e.g. fivek_expert_c.onnx
-
-model.eval().cpu()
-model.load_state_dict(torch.load(CKPT_DIR/f"best{CKPT_SUFFIX}.pt", map_location="cpu"))
-
-dummy = torch.randn(1,3,224,224)
-with torch.no_grad():
-    torch.onnx.export(model, dummy, ONNX_PATH,
-                      opset_version=17, input_names=["input"], output_names=["params"],
-                      dynamic_axes={"input":{0:"batch"},"params":{0:"batch"}},
-                      do_constant_folding=True)
-
+import json
 import onnxruntime as ort
-sess    = ort.InferenceSession(ONNX_PATH)
-out_arr = sess.run(None, {"input": np.random.randn(1,3,224,224).astype(np.float32)})[0]
-print(f"\nONNX export verified ✓  ({ONNX_NAME})")
-print("Sample:", {n:round(float(v),1) for n,v in zip(PARAM_NAMES, out_arr[0])})
-print(f"\nSaved to Google Drive: {ONNX_PATH}")
-print(f"Download and place next to LumaPhoto.exe")
-print(f"After all 3 experts are trained you will have:")
-print(f"  fivek_expert_c.onnx  ← natural (slider centre)")
-print(f"  fivek_expert_a.onnx  ← vibrant (slider right)")
-print(f"  fivek_expert_e.onnx  ← dramatic (slider left)")
+
+vgg = VGGLoss().to(DEVICE)   # frozen — shared across all expert runs
+
+def train_expert(expert):
+    """Train one expert end-to-end (resumable) and export its ONNX to Drive."""
+    suffix = f"_expert_{expert}"
+    loader = build_loader(expert)
+
+    model = PhotoEnhancerNet(pretrained=True).to(DEVICE)
+    ema   = EMA(model)
+
+    optimizer = torch.optim.AdamW([
+        {"params": model.backbone.parameters(),  "lr": LR*0.1},
+        {"params": list(model.head_in.parameters()) +
+                   list(model.head_res.parameters()) +
+                   list(model.head_out.parameters()) +
+                   list(model.region_proj.parameters()) +
+                   list(model.stats_enc.parameters()), "lr": LR},
+    ], weight_decay=1e-4)
+
+    total_steps  = EPOCHS * len(loader)
+    warmup_steps = WARMUP_EP * len(loader)
+
+    def lr_lambda(step):
+        if step < warmup_steps: return step / max(1, warmup_steps)
+        prog = (step-warmup_steps) / max(1, total_steps-warmup_steps)
+        return max(1e-3, 0.5*(1.0+math.cos(math.pi*prog)))
+
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+    scaler    = torch.amp.GradScaler("cuda", enabled=torch.cuda.is_available())
+
+    best_loss   = math.inf
+    start_epoch = 0
+
+    # Resume from per-expert checkpoint if available
+    resume_path = DRIVE_OUT / f"last{suffix}.pt"
+    if resume_path.exists():
+        print(f"Resuming Expert {expert.upper()} from {resume_path} …")
+        ckpt = torch.load(resume_path, map_location=DEVICE)
+        model.load_state_dict(ckpt["model"])
+        ema.shadow = ckpt["ema"]
+        optimizer.load_state_dict(ckpt["optimizer"])
+        scheduler.load_state_dict(ckpt["scheduler"])
+        best_loss   = ckpt.get("best_loss", math.inf)
+        start_epoch = ckpt["epoch"] + 1
+        print(f"  Resumed at epoch {start_epoch+1}/{EPOCHS}  |  best so far: {best_loss:.4f}")
+    else:
+        print(f"\nStarting Expert {expert.upper()} — {EPOCHS} epochs, {len(loader)} batches/epoch")
+        print(f"Estimated time on T4: {EPOCHS*len(loader)*BATCH/300/3600:.1f} hours")
+
+    t_start = time.time()
+
+    for epoch in range(start_epoch, EPOCHS):
+        model.train()
+        epoch_loss = 0.0
+        t0 = time.time()
+
+        for inp, tgt in loader:
+            inp = inp.to(DEVICE, non_blocking=True)
+            tgt = tgt.to(DEVICE, non_blocking=True)
+            model_inp = F.interpolate(inp,(224,224),mode="bilinear",align_corners=False)
+            model_inp = (model_inp - MEAN_T) / STD_T
+
+            optimizer.zero_grad(set_to_none=True)
+            with torch.amp.autocast("cuda", enabled=torch.cuda.is_available()):
+                params = model(model_inp)
+                pred   = apply_params(inp, params)
+                loss   = F.l1_loss(pred,tgt) + 0.10*vgg(pred,tgt) + 0.50*ssim_loss(pred,tgt) + 0.20*color_moment_loss(pred,tgt)
+
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            scaler.step(optimizer)
+            scaler.update()
+            scheduler.step()
+            ema.update(model)
+            epoch_loss += loss.item()
+
+        avg     = epoch_loss / len(loader)
+        elapsed = time.time() - t0
+        remaining = (EPOCHS-epoch-1)*elapsed/3600
+        print(f"[{expert.upper()}] Ep {epoch+1:02d}/{EPOCHS}  loss={avg:.4f}  ({elapsed:.0f}s/ep, ~{remaining:.1f}h left)")
+
+        # Save to local + Google Drive so a session reset doesn't lose progress
+        ckpt = {"epoch":epoch,"model":model.state_dict(),"ema":ema.state_dict(),
+                "optimizer":optimizer.state_dict(),"scheduler":scheduler.state_dict(),"best_loss":best_loss}
+        torch.save(ckpt, CKPT_DIR/f"last{suffix}.pt")
+        torch.save(ckpt, DRIVE_OUT/f"last{suffix}.pt")   # Drive backup
+
+        if avg < best_loss:
+            best_loss = avg
+            torch.save(ema.state_dict(), CKPT_DIR/f"best{suffix}.pt")
+            torch.save(ema.state_dict(), DRIVE_OUT/f"best{suffix}.pt")   # Drive backup
+            print(f"  ↳ New best (EMA weights): {best_loss:.4f}")
+
+    print(f"\nExpert {expert.upper()} trained in {(time.time()-t_start)/3600:.2f}h  |  Best loss: {best_loss:.4f}")
+
+    # ── Export ONNX for this expert ───────────────────────────────────────────
+    onnx_path = str(DRIVE_OUT / onnx_name(expert))
+    best_path = CKPT_DIR / f"best{suffix}.pt"
+    if not best_path.exists():
+        best_path = DRIVE_OUT / f"best{suffix}.pt"   # resumed session: local copy absent
+
+    model.eval().cpu()
+    model.load_state_dict(torch.load(best_path, map_location="cpu"))
+
+    dummy = torch.randn(1,3,224,224)
+    with torch.no_grad():
+        torch.onnx.export(model, dummy, onnx_path,
+                          opset_version=17, input_names=["input"], output_names=["params"],
+                          dynamic_axes={"input":{0:"batch"},"params":{0:"batch"}},
+                          do_constant_folding=True)
+
+    # Write the manifest the app REQUIRES to trust this model.
+    # NeuralEnhancer.IsTrustedParamModel() silently ignores any .onnx whose
+    # sidecar .json is missing or whose profile/param_count/expert don't match.
+    manifest_path = str(Path(onnx_path).with_suffix(".json"))
+    json.dump({
+        "training_profile": "fivek-v2",
+        "dataset": "MIT-Adobe FiveK",
+        "expert": expert,
+        "param_count": NUM_PARAMS,
+        "input": "float32 [1, 3, 224, 224] ImageNet-normalised RGB",
+        "output": "float32 [1, 15] LumaPhoto slider parameters",
+    }, open(manifest_path, "w"), indent=2)
+
+    sess    = ort.InferenceSession(onnx_path)
+    out_arr = sess.run(None, {"input": np.random.randn(1,3,224,224).astype(np.float32)})[0]
+    print(f"ONNX export verified ✓  ({onnx_name(expert)})")
+    print("Sample:", {n:round(float(v),1) for n,v in zip(PARAM_NAMES, out_arr[0])})
+    print(f"Saved to Drive: {onnx_path}  (+ manifest {Path(manifest_path).name})")
+
+    # Free GPU memory before the next expert
+    del model, ema, optimizer, scheduler, scaler, loader
+    torch.cuda.empty_cache()
+
+
+# ── 11. Run the queue ─────────────────────────────────────────────────────────
+
+for i, expert in enumerate(todo, 1):
+    print(f"\n{'='*70}\n  EXPERT {expert.upper()}  ({i}/{len(todo)})\n{'='*70}")
+    train_expert(expert)
+
+print(f"\n{'='*70}\nAll done. Models on Drive (My Drive/LumaPhoto/):")
+for e in EXPERTS:
+    status = "✓" if (DRIVE_OUT / onnx_name(e)).exists() else "✗ missing"
+    print(f"  {onnx_name(e)}  {status}")
+print("""
+Slider mapping:
+  fivek_expert_c.onnx  ← natural  (slider centre)
+  fivek_expert_a.onnx  ← vibrant  (slider right)
+  fivek_expert_e.onnx  ← dramatic (slider left)
+Download each .onnx + its .json manifest and place next to LumaPhoto.exe""")

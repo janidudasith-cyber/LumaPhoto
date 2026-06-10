@@ -10,9 +10,9 @@
     <Optimize>true</Optimize>
 
     <ApplicationIcon>LumaPhoto.ico</ApplicationIcon>
-    <Version>1.1.0</Version>
-    <AssemblyVersion>1.1.0.0</AssemblyVersion>
-    <FileVersion>1.1.0.0</FileVersion>
+    <Version>1.3.0</Version>
+    <AssemblyVersion>1.3.0.0</AssemblyVersion>
+    <FileVersion>1.3.0.0</FileVersion>
     <ProductName>LumaPhoto</ProductName>
     <Copyright>© 2026 LumaPhoto</Copyright>
     <PublishSingleFile>true</PublishSingleFile>
@@ -25,6 +25,30 @@
   </ItemGroup>
   <!-- Places365 model + labels: copy next to exe when present; excluded from single-file bundle -->
   <ItemGroup>
+    <Content Condition="Exists('fivek_expert_c.onnx')" Include="fivek_expert_c.onnx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <Content Condition="Exists('fivek_expert_c.json')" Include="fivek_expert_c.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <Content Condition="Exists('fivek_expert_a.onnx')" Include="fivek_expert_a.onnx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <Content Condition="Exists('fivek_expert_a.json')" Include="fivek_expert_a.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <Content Condition="Exists('fivek_expert_e.onnx')" Include="fivek_expert_e.onnx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+    <Content Condition="Exists('fivek_expert_e.json')" Include="fivek_expert_e.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
     <Content Condition="Exists('places365_mobilenet.onnx')" Include="places365_mobilenet.onnx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>

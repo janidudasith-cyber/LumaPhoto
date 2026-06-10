@@ -159,12 +159,91 @@ public partial class MainWindow
         foreach (var path in recents)
         {
             string p = path;
-            var btn = DarkListButton(Path.GetFileName(p), Path.GetDirectoryName(p) ?? "", Brushes.White, null);
-            btn.Click += (_, _) => { dlg.Close(); LoadImageFile(p); };
-            stack.Children.Add(btn);
+            stack.Children.Add(RecentRow(p, () => { dlg.Close(); LoadImageFile(p); }));
         }
         AddCancelButton(dlg, stack);
         dlg.ShowDialog();
+    }
+
+    // Recent-files row with a small async-loaded thumbnail preview.
+    private Border RecentRow(string path, System.Action onOpen)
+    {
+        var outer = new Border
+        {
+            Height = 56, Margin = new Thickness(0, 0, 0, 8),
+            CornerRadius = new CornerRadius(9),
+            Background = new SolidColorBrush(Color.FromRgb(0x28, 0x28, 0x2F)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x48)),
+            BorderThickness = new Thickness(1), Cursor = Cursors.Hand
+        };
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var thumbHost = new Border
+        {
+            Width = 56, Height = 42, CornerRadius = new CornerRadius(6),
+            Background = new SolidColorBrush(Color.FromRgb(0x1C, 0x1C, 0x1E)),
+            Margin = new Thickness(7, 0, 11, 0), VerticalAlignment = VerticalAlignment.Center,
+            ClipToBounds = true,
+            Child = new TextBlock
+            {
+                Text = "🖼", FontSize = 14, Opacity = 0.4,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Center
+            }
+        };
+        Grid.SetColumn(thumbHost, 0);
+        grid.Children.Add(thumbHost);
+
+        var textStack = new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 12, 0)
+        };
+        textStack.Children.Add(new TextBlock
+        {
+            Text = Path.GetFileName(path), Foreground = Brushes.White,
+            FontSize = 13, FontWeight = FontWeights.Medium,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        });
+        textStack.Children.Add(new TextBlock
+        {
+            Text = Path.GetDirectoryName(path) ?? "",
+            Foreground = new SolidColorBrush(Color.FromRgb(0x8E, 0x8E, 0xA0)),
+            FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis
+        });
+        Grid.SetColumn(textStack, 1);
+        grid.Children.Add(textStack);
+
+        outer.Child = grid;
+        outer.MouseEnter += (_, _) => outer.Background = new SolidColorBrush(Color.FromRgb(0x32, 0x32, 0x3A));
+        outer.MouseLeave += (_, _) => outer.Background = new SolidColorBrush(Color.FromRgb(0x28, 0x28, 0x2F));
+        outer.MouseLeftButtonUp += (_, _) => onOpen();
+
+        _ = LoadThumbIntoAsync(thumbHost, path);
+        return outer;
+    }
+
+    private async Task LoadThumbIntoAsync(Border host, string path)
+    {
+        var bmp = await Task.Run(() =>
+        {
+            try
+            {
+                var b = new BitmapImage();
+                b.BeginInit();
+                b.UriSource         = new Uri(path);
+                b.DecodePixelHeight = 84;   // 2× display size for crisp thumbnails
+                b.CacheOption       = BitmapCacheOption.OnLoad;
+                b.EndInit();
+                b.Freeze();
+                return (BitmapImage?)b;
+            }
+            catch { return null; }   // unreadable file — keep placeholder glyph
+        });
+        if (bmp != null)
+            host.Child = new Image { Source = bmp, Stretch = Stretch.UniformToFill };
     }
 
     // ── Looks (custom presets + built-in scene looks) ──────────────────────────────
@@ -300,11 +379,43 @@ public partial class MainWindow
                 { Color = Colors.Black, Opacity = 0.75, BlurRadius = 28, ShadowDepth = 4 }
         };
         var outer = new StackPanel();
-        outer.Children.Add(new TextBlock
+
+        // Header: title on the left, ✕ close button on the right
+        var header = new Grid { Margin = new Thickness(0, 0, 0, 14) };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.Children.Add(new TextBlock
         {
             Text = title, FontSize = 15, FontWeight = FontWeights.SemiBold,
-            Foreground = new SolidColorBrush(titleColor), Margin = new Thickness(0, 0, 0, 14)
+            Foreground = new SolidColorBrush(titleColor), VerticalAlignment = VerticalAlignment.Center
         });
+        var closeGlyph = new TextBlock
+        {
+            Text = "✕", FontSize = 12,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x8E, 0x8E, 0xA0)),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment   = VerticalAlignment.Center
+        };
+        var closeBtn = new Border
+        {
+            Width = 26, Height = 26, CornerRadius = new CornerRadius(7),
+            Background = Brushes.Transparent, Cursor = Cursors.Hand,
+            ToolTip = "Close", Child = closeGlyph
+        };
+        closeBtn.MouseEnter += (_, _) =>
+        {
+            closeBtn.Background = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x48));
+            closeGlyph.Foreground = Brushes.White;
+        };
+        closeBtn.MouseLeave += (_, _) =>
+        {
+            closeBtn.Background = Brushes.Transparent;
+            closeGlyph.Foreground = new SolidColorBrush(Color.FromRgb(0x8E, 0x8E, 0xA0));
+        };
+        closeBtn.MouseLeftButtonUp += (_, _) => dlg.Close();
+        Grid.SetColumn(closeBtn, 1);
+        header.Children.Add(closeBtn);
+        outer.Children.Add(header);
         var scroll = new ScrollViewer
         {
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,

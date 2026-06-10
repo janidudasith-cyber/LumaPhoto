@@ -13,6 +13,7 @@ Model I/O contract:
 """
 
 import argparse
+import json
 from pathlib import Path
 
 import torch
@@ -21,13 +22,16 @@ import torch.onnx
 from model import PhotoEnhancerNet
 
 
-def export(checkpoint: str, out_path: str, opset: int = 17):
+def export(checkpoint: str, out_path: str, opset: int = 17, expert: str = "c"):
     device = torch.device("cpu")
     model  = PhotoEnhancerNet(pretrained=False)
 
     state = torch.load(checkpoint, map_location=device)
-    # Support both raw state_dict and full checkpoint dict
-    if isinstance(state, dict) and "model" in state:
+    # Support raw state_dict, best.pt EMA state_dict, and full last.pt checkpoints.
+    # Prefer EMA weights when present; they are what the app should ship.
+    if isinstance(state, dict) and "ema" in state:
+        state = state["ema"]
+    elif isinstance(state, dict) and "model" in state:
         state = state["model"]
     model.load_state_dict(state)
     model.eval()
@@ -48,6 +52,18 @@ def export(checkpoint: str, out_path: str, opset: int = 17):
 
     print(f"Exported → {out_path}")
 
+    manifest = {
+        "training_profile": "fivek-v2",
+        "dataset": "MIT-Adobe FiveK",
+        "expert": expert,
+        "param_count": 15,
+        "input": "float32 [1, 3, 224, 224] ImageNet-normalised RGB",
+        "output": "float32 [1, 15] LumaPhoto slider parameters",
+    }
+    manifest_path = str(Path(out_path).with_suffix(".json"))
+    Path(manifest_path).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    print(f"Manifest → {manifest_path}")
+
     # Quick sanity check
     import onnxruntime as ort
     import numpy as np
@@ -63,9 +79,10 @@ def export(checkpoint: str, out_path: str, opset: int = 17):
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--checkpoint", required=True, help="Path to best.pt")
-    p.add_argument("--output",     default=None,  help="Output .onnx path (default: next to checkpoint)")
+    p.add_argument("--output",     default=None,  help="Output .onnx path (default: fivek_expert_<expert>.onnx next to checkpoint)")
     p.add_argument("--opset",      type=int, default=17)
+    p.add_argument("--expert",     default="c", help="FiveK expert used for this model: c/a/e")
     args = p.parse_args()
 
-    out = args.output or str(Path(args.checkpoint).with_name("enhancer_params.onnx"))
-    export(args.checkpoint, out, args.opset)
+    out = args.output or str(Path(args.checkpoint).with_name(f"fivek_expert_{args.expert.lower()}.onnx"))
+    export(args.checkpoint, out, args.opset, args.expert)

@@ -1,0 +1,8 @@
+{
+  "training_profile": "fivek-v2",
+  "dataset": "MIT-Adobe FiveK",
+  "expert": "a",
+  "param_count": 15,
+  "input": "float32 [1, 3, 224, 224] ImageNet-normalised RGB",
+  "output": "float32 [1, 15] LumaPhoto slider parameters"
+}
