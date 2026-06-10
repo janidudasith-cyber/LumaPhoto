@@ -70,6 +70,32 @@ def _resize_min(img: Image.Image, min_side: int) -> Image.Image:
     return img
 
 
+def _first_existing(root: Path, names: list[str]) -> Optional[Path]:
+    for name in names:
+        p = root / name
+        if p.exists():
+            return p
+    return None
+
+
+def _expert_folder_candidates(expert: str) -> list[str]:
+    e = expert.strip()
+    low = e.lower()
+    if low.startswith("expert") and len(low) > 6:
+        letter = low[-1]
+    else:
+        letter = low[-1] if low else "c"
+    return [
+        e,
+        low,
+        letter,
+        letter.upper(),
+        f"expert{letter.upper()}",
+        f"expert{letter}",
+        f"Expert{letter.upper()}",
+    ]
+
+
 # ---------------------------------------------------------------------------
 # MIT-Adobe FiveK
 # ---------------------------------------------------------------------------
@@ -100,12 +126,13 @@ class FiveKDataset(Dataset):
         crop_size: int = 256,
         train: bool = True,
     ):
-        self.input_dir  = Path(root) / "input"
-        self.target_dir = Path(root) / expert
+        root_path = Path(root)
+        self.input_dir  = _first_existing(root_path, ["input", "raw"])
+        self.target_dir = _first_existing(root_path, _expert_folder_candidates(expert))
 
-        if not self.input_dir.exists() or not self.target_dir.exists():
+        if self.input_dir is None or self.target_dir is None:
             raise FileNotFoundError(
-                f"FiveK root '{root}' must contain 'input/' and '{expert}/' subdirs.\n"
+                f"FiveK root '{root}' must contain input/raw and an expert folder for '{expert}'.\n"
                 "Download from https://data.csail.mit.edu/graphics/fivek/"
             )
 
@@ -436,6 +463,7 @@ class LOLDataset(Dataset):
 
 def build_dataset(
     fivek_root:     Optional[str] = None,
+    fivek_expert:   str = "expertC",
     ppr10k_root:    Optional[str] = None,
     dped_root:      Optional[str] = None,
     lol_root:       Optional[str] = None,
@@ -451,9 +479,9 @@ def build_dataset(
 
     if fivek_root and Path(fivek_root).exists():
         try:
-            ds = FiveKDataset(fivek_root, crop_size=crop_size, train=train)
+            ds = FiveKDataset(fivek_root, expert=fivek_expert, crop_size=crop_size, train=train)
             datasets.append(ds)
-            print(f"FiveK: {len(ds)} pairs")
+            print(f"FiveK ({fivek_expert}): {len(ds)} pairs")
         except FileNotFoundError as e:
             print(f"FiveK skipped: {e}")
 

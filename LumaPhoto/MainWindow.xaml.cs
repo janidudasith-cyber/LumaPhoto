@@ -13,6 +13,15 @@ namespace LumaPhoto;
 public partial class MainWindow : Window
 {
     // ── State ──
+    private const string ImageOpenFilter =
+        "Images|*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tiff;*.tif;*.gif;*.heic;*.heif|All files|*.*";
+
+    private static readonly HashSet<string> SupportedInputExtensions =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".tif", ".gif", ".heic", ".heif"
+        };
+
     private byte[]? _sourcePixels;
     private int     _sourceW, _sourceH;
     private string  _fileName = "photo";
@@ -30,6 +39,9 @@ public partial class MainWindow : Window
     // _autoPreState    = the adjustment state BEFORE auto was toggled on
     // _autoEnhanceOn   = whether auto is currently active
     private AdjustmentState? _autoBaseParams;
+    private AdjustmentState? _autoDramaticParams;
+    private AdjustmentState? _autoNaturalParams;
+    private AdjustmentState? _autoBrightParams;
     private AdjustmentState? _autoPreState;
     private SceneType         _autoScene = SceneType.General;
     private bool              _autoEnhanceOn = false;
@@ -216,7 +228,7 @@ public partial class MainWindow : Window
         SourceInitialized += (_, _) => ApplyDarkTitleBar();
         Loaded  += (_, _) => { UpdateLayout(); _ = CheckForUpdateAsync(); };
         Closed  += (_, _) => _neuralEnhancer?.Dispose();
-        SizeChanged += (_, _) => { if (_cropping) ClampCropToImage(); RefreshCropOverlay(); if (_splitViewOn) UpdateSplitView(); };
+        SizeChanged += (_, _) => { if (_cropping) ClampCropToImage(); RefreshCropOverlay(); RefreshDesignOverlay(); if (_splitViewOn) UpdateSplitView(); };
         this.Icon = CreateAppIcon();
 
         // Load neural enhancer in the background so startup is not delayed
@@ -415,6 +427,7 @@ public partial class MainWindow : Window
         if (!token.IsCancellationRequested && result != null)
         {
             PhotoDisplay.Source = result;
+            RefreshDesignOverlay();
             ScheduleHistogram();
             UpdateStatusBar();
             if (_splitViewOn) UpdateSplitView();
@@ -440,6 +453,7 @@ public partial class MainWindow : Window
             return;
         }
         PhotoDisplay.Source = ImageProcessor.Render(_sourcePixels, _sourceW, _sourceH, _adj);
+        RefreshDesignOverlay();
         if (_splitViewOn) UpdateSplitView();
     }
 
@@ -508,10 +522,13 @@ public partial class MainWindow : Window
         UndoCropBtn.IsEnabled = false;
         RevertBtn.IsEnabled = true;
         SetControlsEnabled(true);
-        MarkupCanvas.Visibility = Visibility.Collapsed;
+        MarkupCanvas.Visibility       = Visibility.Visible;   // visible on all tabs
+        MarkupCanvas.IsHitTestVisible = TabMarkup.IsChecked == true;
+        MarkupCanvas.Opacity          = 1.0;
+        _markupLayerVisible           = true;
         DoRender();
         if (TabCrop.IsChecked == true)
-            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render,
+            _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Render,
                 new Action(StartCropOverlay));
     }
 
@@ -520,6 +537,9 @@ public partial class MainWindow : Window
         _adj.Reset();
         _autoEnhanceOn  = false;
         _autoBaseParams = null;
+        _autoDramaticParams = null;
+        _autoNaturalParams = null;
+        _autoBrightParams = null;
         _autoPreState   = null;
 
         AutoBtn.Content    = "⚡ Auto";
@@ -527,7 +547,7 @@ public partial class MainWindow : Window
         AutoSubLabel.Text  = "Smart analysis of your photo";
         AutoIntensityPanel.Visibility = Visibility.Collapsed;
         AutoIntensitySlider.Value     = 0;
-        AutoIntensityLabel.Text       = "Default";
+        AutoIntensityLabel.Text       = "Natural";
 
         foreach (var sr in AllSliderRows()) sr.SetValueSilent(0);
 
@@ -544,6 +564,8 @@ public partial class MainWindow : Window
         MarkupCanvas.Children.Clear();
         _markupStrokes.Clear();
         UndoMarkupBtn.IsEnabled = false;
+        RefreshDesignOverlay();
+        UpdateLayerList();
 
         _suppressHslSliders = true;
         HslHueSlider.Value = 0; HslSatSlider.Value = 0;
@@ -598,6 +620,16 @@ public partial class MainWindow : Window
         RedoBtn.IsEnabled = _future.Count  > 0 && on;
         UndoMarkupBtn.IsEnabled  = false;
         ClearMarkupBtn.IsEnabled = on;
+        CollageSplitBtn.IsEnabled   = on;
+        CollageStackBtn.IsEnabled   = on;
+        CollageGridBtn.IsEnabled    = on;
+        CollageFeatureBtn.IsEnabled = on;
+        FrameStyleCombo.IsEnabled = on;
+        FrameSizeSlider.IsEnabled = on;
+        WatermarkTextBox.IsEnabled = on;
+        WatermarkPositionCombo.IsEnabled = on;
+        WatermarkOpacitySlider.IsEnabled = on;
+        WatermarkSizeSlider.IsEnabled = on;
         foreach (var sr in AllSliderRows()) sr.SetEnabled(on);
         foreach (var child in FilterGrid.Children)
             if (child is Border b) b.Opacity = on ? 1.0 : 0.4;
@@ -609,7 +641,7 @@ public partial class MainWindow : Window
         var dlg = new OpenFileDialog
         {
             Title  = "Open Photo",
-            Filter = "Images|*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tiff;*.tif;*.gif;*.heic;*.heif|All files|*.*"
+            Filter = ImageOpenFilter
         };
         if (dlg.ShowDialog() == true) LoadImageFile(dlg.FileName);
     }
@@ -634,7 +666,7 @@ public partial class MainWindow : Window
         {
             Title    = "Export Photo",
             FileName = $"{_fileName}-luma",
-            Filter      = "JPEG Image|*.jpg;*.jpeg|PNG Image|*.png|TIFF Image|*.tiff;*.tif",
+            Filter      = "JPEG Image|*.jpg;*.jpeg|PNG Image|*.png|TIFF Image|*.tiff;*.tif|BMP Image|*.bmp|GIF Image|*.gif",
             FilterIndex = 1
         };
         if (dlg.ShowDialog() != true) return;
@@ -644,8 +676,10 @@ public partial class MainWindow : Window
             ? new CroppedBitmap(rendered, new Int32Rect(_pendCropX, _pendCropY, _pendCropW, _pendCropH))
             : (BitmapSource)rendered;
 
+        exportSrc = CompositeDesignOnExport(exportSrc);
+
         // Flatten markup strokes onto the exported image
-        if (_markupStrokes.Count > 0)
+        if (ShouldExportMarkup)
             exportSrc = CompositeMarkupOnExport(exportSrc);
 
         string ext   = System.IO.Path.GetExtension(dlg.FileName).ToLowerInvariant();
@@ -656,6 +690,8 @@ public partial class MainWindow : Window
             {
                 ".jpg" or ".jpeg" => new JpegBitmapEncoder { QualityLevel = _jpegQuality },
                 ".tiff" or ".tif" => new TiffBitmapEncoder(),
+                ".bmp"            => new BmpBitmapEncoder(),
+                ".gif"            => new GifBitmapEncoder(),
                 _                 => new PngBitmapEncoder()
             };
             encoder.Frames.Add(BitmapFrame.Create(exportSrc));
@@ -1200,14 +1236,22 @@ public partial class MainWindow : Window
         if (_cropping && tag != "Crop")
             CancelCrop();
 
-        foreach (ToggleButton tb in new[] { TabAdjust, TabFilters, TabCrop, TabMarkup })
+        foreach (ToggleButton tb in new[] { TabAdjust, TabFilters, TabCrop, TabMarkup, TabDesign, TabLayers })
             tb.IsChecked = tb == clicked;
         AdjustPanel.Visibility  = tag == "Adjust"  ? Visibility.Visible : Visibility.Collapsed;
         FiltersPanel.Visibility = tag == "Filters" ? Visibility.Visible : Visibility.Collapsed;
         CropPanel.Visibility    = tag == "Crop"    ? Visibility.Visible : Visibility.Collapsed;
         MarkupPanel.Visibility  = tag == "Markup"  ? Visibility.Visible : Visibility.Collapsed;
+        DesignPanel.Visibility  = tag == "Design"  ? Visibility.Visible : Visibility.Collapsed;
+        LayersPanel.Visibility  = tag == "Layers"  ? Visibility.Visible : Visibility.Collapsed;
         if (_imageLoaded)
-            MarkupCanvas.Visibility = tag == "Markup" ? Visibility.Visible : Visibility.Collapsed;
+        {
+            // Markup stays visible on every tab; drawing only works on the Markup tab
+            MarkupCanvas.Visibility       = Visibility.Visible;
+            MarkupCanvas.IsHitTestVisible = tag == "Markup";
+            RefreshDesignOverlay();
+            if (tag == "Layers") UpdateLayerList();
+        }
 
         _isCropTabActive = tag == "Crop";
 
@@ -1318,15 +1362,14 @@ public partial class MainWindow : Window
             AutoBtn.Content    = "⚡ On";
             AutoBtn.Background = new SolidColorBrush(Color.FromRgb(0x27, 0xB8, 0x4A));
 
-            AutoSubLabel.Text = SceneLabel(_autoScene, "✓");
+            AutoSubLabel.Text = SceneLabel(_autoScene, _neuralEnhancer?.ModelStatus ?? "Rules only");
             AutoIntensityPanel.Visibility = Visibility.Visible;
 
             AutoIntensitySlider.Value = 0;
-            AutoIntensityLabel.Text   = "Default";
-            ApplyAutoAtSliderValue(0f);
+            AutoIntensityLabel.Text   = "Natural";
+            ApplyAutoStyleAtSliderValue(0f);
 
-            // TODO: re-enable once FiveK-trained models (expert_a/c/e.onnx) are ready.
-            // _ = RunNeuralEnhancerAsync();
+            _ = RunNeuralEnhancerAsync();
         }
         else
         {
@@ -1365,6 +1408,9 @@ public partial class MainWindow : Window
     {
         _autoEnhanceOn = false;
         _autoBaseParams = null;
+        _autoDramaticParams = null;
+        _autoNaturalParams = null;
+        _autoBrightParams = null;
         _autoPreState   = null;
         _autoAnalysis   = null;
         _autoScene      = SceneType.General;
@@ -1373,7 +1419,7 @@ public partial class MainWindow : Window
         AutoSubLabel.Text  = "Smart analysis of your photo";
         AutoIntensityPanel.Visibility = Visibility.Collapsed;
         AutoIntensitySlider.Value     = 0;
-        AutoIntensityLabel.Text       = "Default";
+        AutoIntensityLabel.Text       = "Natural";
     }
 
     private static string SceneLabel(SceneType scene, string suffix) => scene switch
@@ -1399,6 +1445,41 @@ public partial class MainWindow : Window
         var analysis = _autoAnalysis;
         var enhancer = _neuralEnhancer;
 
+        if (enhancer?.HasExpertModels == true)
+        {
+            var expertParams = await Task.Run(() => new
+            {
+                Dramatic = enhancer.PredictParams(pixels, w, h, "e"),
+                Natural  = enhancer.PredictParams(pixels, w, h, "c"),
+                Bright   = enhancer.PredictParams(pixels, w, h, "a"),
+            });
+
+            if (expertParams.Dramatic == null || expertParams.Natural == null || expertParams.Bright == null)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    if (!_autoEnhanceOn) return;
+                    AutoSubLabel.Text = SceneLabel(_autoScene, enhancer.ModelStatus);
+                    ApplyAutoStyleAtSliderValue((float)AutoIntensitySlider.Value);
+                });
+                return;
+            }
+
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (!_autoEnhanceOn || _autoBaseParams == null) return;
+
+                _autoDramaticParams = BlendAutoParams(_autoBaseParams, ShapeDramaticEndpoint(expertParams.Dramatic), nnWeight: 0.82f);
+                _autoNaturalParams  = BlendAutoParams(_autoBaseParams, ShapeNaturalEndpoint(expertParams.Natural), nnWeight: 0.35f);
+                _autoBrightParams   = BlendAutoParams(_autoBaseParams, ShapeBrightEndpoint(expertParams.Bright), nnWeight: 0.82f);
+                _autoBaseParams     = _autoNaturalParams;
+
+                AutoSubLabel.Text = SceneLabel(_autoScene, $"AI {enhancer.ModelStatus}");
+                ApplyAutoStyleAtSliderValue((float)AutoIntensitySlider.Value);
+            });
+            return;
+        }
+
         if (enhancer?.HasParamModel == true)
         {
             var directParams = await Task.Run(() => enhancer.PredictParams(pixels, w, h));
@@ -1407,8 +1488,8 @@ public partial class MainWindow : Window
                 await Dispatcher.InvokeAsync(() =>
                 {
                     if (!_autoEnhanceOn) return;
-                    AutoSubLabel.Text = SceneLabel(_autoScene, "✓");
-                    ApplyAutoAtSliderValue((float)AutoIntensitySlider.Value);
+                    AutoSubLabel.Text = SceneLabel(_autoScene, enhancer.ModelStatus);
+                    ApplyAutoStyleAtSliderValue((float)AutoIntensitySlider.Value);
                 });
                 return;
             }
@@ -1417,31 +1498,11 @@ public partial class MainWindow : Window
                 if (!_autoEnhanceOn) return;
                 if (_autoBaseParams != null)
                 {
-                    // PPR10K is portrait-only, so the NN is only reliable for Portrait scenes.
-                    // For all other scene types the NN extrapolates outside its training
-                    // distribution and produces extreme values — skip the blend entirely.
-                    if (_autoScene == SceneType.Portrait)
-                    {
-                        const float nn = 0.40f, rb = 0.60f;
-                        _autoBaseParams.Exposure    = rb * _autoBaseParams.Exposure    + nn * directParams.Exposure;
-                        _autoBaseParams.Brilliance  = rb * _autoBaseParams.Brilliance  + nn * directParams.Brilliance;
-                        _autoBaseParams.Highlights  = rb * _autoBaseParams.Highlights  + nn * directParams.Highlights;
-                        _autoBaseParams.Shadows     = rb * _autoBaseParams.Shadows     + nn * directParams.Shadows;
-                        _autoBaseParams.Contrast    = rb * _autoBaseParams.Contrast    + nn * directParams.Contrast;
-                        _autoBaseParams.Brightness  = rb * _autoBaseParams.Brightness  + nn * directParams.Brightness;
-                        _autoBaseParams.BlackPoint  = rb * _autoBaseParams.BlackPoint  + nn * directParams.BlackPoint;
-                        _autoBaseParams.Saturation  = rb * _autoBaseParams.Saturation  + nn * directParams.Saturation;
-                        _autoBaseParams.Vibrance    = rb * _autoBaseParams.Vibrance    + nn * directParams.Vibrance;
-                        _autoBaseParams.Warmth      = rb * _autoBaseParams.Warmth      + nn * directParams.Warmth;
-                        _autoBaseParams.Tint        = rb * _autoBaseParams.Tint        + nn * directParams.Tint;
-                        _autoBaseParams.Sharpness   = Math.Max(directParams.Sharpness,  _autoBaseParams.Sharpness);
-                        _autoBaseParams.Definition  = Math.Max(directParams.Definition, _autoBaseParams.Definition);
-                        _autoBaseParams.Noise       = Math.Max(directParams.Noise,      _autoBaseParams.Noise);
-                    }
-                    // Non-portrait: NN output ignored — rule-based params kept as-is.
+                    _autoNaturalParams = BlendAutoParams(_autoBaseParams, ShapeNaturalEndpoint(directParams), nnWeight: 0.30f);
+                    _autoBaseParams = _autoNaturalParams;
                 }
-                AutoSubLabel.Text = SceneLabel(_autoScene, "AI ✓");
-                ApplyAutoAtSliderValue((float)AutoIntensitySlider.Value);
+                AutoSubLabel.Text = SceneLabel(_autoScene, $"AI {enhancer.ModelStatus}");
+                ApplyAutoStyleAtSliderValue((float)AutoIntensitySlider.Value);
             });
             return;
         }
@@ -1454,8 +1515,8 @@ public partial class MainWindow : Window
             await Dispatcher.InvokeAsync(() =>
             {
                 if (!_autoEnhanceOn) return;
-                AutoSubLabel.Text = SceneLabel(_autoScene, "✓");
-                ApplyAutoAtSliderValue((float)AutoIntensitySlider.Value);
+                AutoSubLabel.Text = SceneLabel(_autoScene, enhancer?.ModelStatus ?? "Rules only");
+                ApplyAutoStyleAtSliderValue((float)AutoIntensitySlider.Value);
             });
             return;
         }
@@ -1466,10 +1527,106 @@ public partial class MainWindow : Window
             if (!_autoEnhanceOn || _autoBaseParams == null || _autoAnalysis == null) return;
             _autoBaseParams = ImageProcessor.RefineWithNN(_autoBaseParams, _autoAnalysis, weights.Value);
             _autoScene = weights.Value.Dominant;
-            AutoSubLabel.Text = SceneLabel(_autoScene, "AI ✓");
-            ApplyAutoAtSliderValue((float)AutoIntensitySlider.Value);
+            AutoSubLabel.Text = SceneLabel(_autoScene, "AI scene classifier");
+            ApplyAutoStyleAtSliderValue((float)AutoIntensitySlider.Value);
         });
     }
+
+    private static AdjustmentState BlendAutoParams(AdjustmentState ruleParams, AdjustmentState nnParams, float nnWeight)
+    {
+        float rb = 1f - nnWeight;
+        float B(float rule, float nn, float min, float max) =>
+            Math.Clamp(rule * rb + nn * nnWeight, min, max);
+
+        return new AdjustmentState
+        {
+            Exposure   = B(ruleParams.Exposure,   nnParams.Exposure,   -75, 75),
+            Brilliance = B(ruleParams.Brilliance, nnParams.Brilliance, -75, 75),
+            Highlights = B(ruleParams.Highlights, nnParams.Highlights, -80, 80),
+            Shadows    = B(ruleParams.Shadows,    nnParams.Shadows,    -20, 85),
+            Contrast   = B(ruleParams.Contrast,   nnParams.Contrast,   -50, 75),
+            Brightness = B(ruleParams.Brightness, nnParams.Brightness, -50, 50),
+            BlackPoint = B(ruleParams.BlackPoint, nnParams.BlackPoint, -10, 55),
+            Saturation = B(ruleParams.Saturation, nnParams.Saturation, -45, 65),
+            Vibrance   = B(ruleParams.Vibrance,   nnParams.Vibrance,   -20, 80),
+            Warmth     = B(ruleParams.Warmth,     nnParams.Warmth,     -55, 55),
+            Tint       = B(ruleParams.Tint,       nnParams.Tint,       -35, 35),
+            Sharpness  = B(ruleParams.Sharpness,  nnParams.Sharpness,    0, 45),
+            Definition = B(ruleParams.Definition, nnParams.Definition,   0, 55),
+            Noise      = B(ruleParams.Noise,      nnParams.Noise,        0, 70),
+            Vignette   = B(ruleParams.Vignette,   nnParams.Vignette,     0, 45),
+        };
+    }
+
+    private static AdjustmentState ShapeDramaticEndpoint(AdjustmentState src)
+    {
+        var a = src.Clone();
+        a.Exposure = Math.Min(a.Exposure, 8);
+        a.Contrast = Math.Max(a.Contrast, 18);
+        a.BlackPoint = Math.Max(a.BlackPoint, 12);
+        a.Highlights = Math.Min(a.Highlights, -8);
+        a.Definition = Math.Max(a.Definition, 18);
+        a.Vignette = Math.Max(a.Vignette, 12);
+        a.Saturation = Math.Max(a.Saturation, -8);
+        a.Vibrance = Math.Max(a.Vibrance, 8);
+        return a;
+    }
+
+    private static AdjustmentState ShapeNaturalEndpoint(AdjustmentState src)
+    {
+        var a = src.Clone();
+        a.Exposure = Math.Clamp(a.Exposure, -25, 14);
+        a.Brightness = Math.Clamp(a.Brightness, -20, 8);
+        a.Brilliance = Math.Clamp(a.Brilliance, -20, 22);
+        a.Highlights = Math.Min(a.Highlights, -6);
+        a.Shadows = Math.Clamp(a.Shadows, -10, 32);
+        a.Contrast = Math.Clamp(Math.Max(a.Contrast, 4), -25, 35);
+        a.BlackPoint = Math.Clamp(Math.Max(a.BlackPoint, 3), -5, 28);
+        a.Saturation = Math.Clamp(a.Saturation, -8, 24);
+        a.Vibrance = Math.Clamp(Math.Max(a.Vibrance, 4), -5, 34);
+        a.Warmth = Math.Clamp(a.Warmth, -22, 22);
+        a.Tint = Math.Clamp(a.Tint, -16, 16);
+        a.Sharpness = Math.Clamp(a.Sharpness, 0, 28);
+        a.Definition = Math.Clamp(a.Definition, 0, 32);
+        a.Noise = Math.Clamp(a.Noise, 0, 40);
+        a.Vignette = Math.Clamp(a.Vignette, 0, 18);
+        return a;
+    }
+
+    private static AdjustmentState ShapeBrightEndpoint(AdjustmentState src)
+    {
+        var a = src.Clone();
+        a.Exposure = Math.Max(a.Exposure, 10);
+        a.Brilliance = Math.Max(a.Brilliance, 18);
+        a.Shadows = Math.Max(a.Shadows, 12);
+        a.Highlights = Math.Min(a.Highlights, -4);
+        a.Contrast = Math.Max(a.Contrast, 8);
+        a.BlackPoint = Math.Max(a.BlackPoint, 4);
+        a.Saturation = Math.Max(a.Saturation, 8);
+        a.Vibrance = Math.Max(a.Vibrance, 22);
+        a.Definition = Math.Max(a.Definition, 8);
+        a.Vignette = Math.Min(a.Vignette, 12);
+        return a;
+    }
+
+    private static AdjustmentState InterpolateParams(AdjustmentState from, AdjustmentState to, float t) => new()
+    {
+        Exposure   = Lerp(from.Exposure,   to.Exposure,   t),
+        Brilliance = Lerp(from.Brilliance, to.Brilliance, t),
+        Highlights = Lerp(from.Highlights, to.Highlights, t),
+        Shadows    = Lerp(from.Shadows,    to.Shadows,    t),
+        Contrast   = Lerp(from.Contrast,   to.Contrast,   t),
+        Brightness = Lerp(from.Brightness, to.Brightness, t),
+        BlackPoint = Lerp(from.BlackPoint, to.BlackPoint, t),
+        Saturation = Lerp(from.Saturation, to.Saturation, t),
+        Vibrance   = Lerp(from.Vibrance,   to.Vibrance,   t),
+        Warmth     = Lerp(from.Warmth,     to.Warmth,     t),
+        Tint       = Lerp(from.Tint,       to.Tint,       t),
+        Sharpness  = Lerp(from.Sharpness,  to.Sharpness,  t),
+        Definition = Lerp(from.Definition, to.Definition, t),
+        Noise      = Lerp(from.Noise,      to.Noise,      t),
+        Vignette   = Lerp(from.Vignette,   to.Vignette,   t),
+    };
 
     private void AutoIntensity_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
@@ -1477,11 +1634,59 @@ public partial class MainWindow : Window
         float v = (float)e.NewValue;
         if (AutoIntensityLabel != null)
         {
-            if (v < -90)       AutoIntensityLabel.Text = "Original";
-            else if (v == 0)   AutoIntensityLabel.Text = "Default";
-            else               AutoIntensityLabel.Text = (v > 0 ? "+" : "") + v.ToString("0.0");
+            if (_autoDramaticParams != null && _autoNaturalParams != null && _autoBrightParams != null)
+            {
+                if (v < -5)      AutoIntensityLabel.Text = "Dramatic";
+                else if (v > 5)  AutoIntensityLabel.Text = "Bright";
+                else             AutoIntensityLabel.Text = "Natural";
+            }
+            else
+            {
+                if (v < -90)       AutoIntensityLabel.Text = "Original";
+                else if (v == 0)   AutoIntensityLabel.Text = "Natural";
+                else               AutoIntensityLabel.Text = (v > 0 ? "+" : "") + v.ToString("0.0");
+            }
         }
-        ApplyAutoAtSliderValue(v);
+        ApplyAutoStyleAtSliderValue(v);
+    }
+
+    private void ApplyAutoStyleAtSliderValue(float sliderValue)
+    {
+        if (_autoBaseParams == null || _autoPreState == null) return;
+
+        AdjustmentState tgt;
+        if (_autoDramaticParams != null && _autoNaturalParams != null && _autoBrightParams != null)
+        {
+            tgt = sliderValue < 0
+                ? InterpolateParams(_autoDramaticParams, _autoNaturalParams, (sliderValue + 100f) / 100f)
+                : InterpolateParams(_autoNaturalParams, _autoBrightParams, sliderValue / 100f);
+        }
+        else
+        {
+            float t = sliderValue < 0
+                ? (sliderValue + 100f) / 100f
+                : 1f + (sliderValue / 100f) * 0.7f;
+            tgt = InterpolateParams(_autoPreState, _autoBaseParams, t);
+        }
+
+        _adj.Exposure   = Math.Clamp(tgt.Exposure,   -100, 100);
+        _adj.Brilliance = Math.Clamp(tgt.Brilliance, -100, 100);
+        _adj.Highlights = Math.Clamp(tgt.Highlights, -100, 100);
+        _adj.Shadows    = Math.Clamp(tgt.Shadows,    -100, 100);
+        _adj.Contrast   = Math.Clamp(tgt.Contrast,   -100, 100);
+        _adj.Brightness = Math.Clamp(tgt.Brightness, -100, 100);
+        _adj.BlackPoint = Math.Clamp(tgt.BlackPoint, -100, 100);
+        _adj.Saturation = Math.Clamp(tgt.Saturation, -100, 100);
+        _adj.Vibrance   = Math.Clamp(tgt.Vibrance,   -100, 100);
+        _adj.Warmth     = Math.Clamp(tgt.Warmth,     -100, 100);
+        _adj.Tint       = Math.Clamp(tgt.Tint,       -100, 100);
+        _adj.Sharpness  = Math.Clamp(tgt.Sharpness,     0, 100);
+        _adj.Definition = Math.Clamp(tgt.Definition,    0, 100);
+        _adj.Noise      = Math.Clamp(tgt.Noise,         0, 100);
+        _adj.Vignette   = Math.Clamp(tgt.Vignette,      0, 100);
+
+        ApplyAdjToSliders(_adj);
+        ScheduleRender();
     }
 
     /// <summary>
@@ -2144,19 +2349,23 @@ public partial class MainWindow : Window
 
     private void BuildFontCombo()
     {
-        var fonts = new[]
-        {
-            "Arial", "Arial Black", "Calibri", "Cambria", "Comic Sans MS",
-            "Courier New", "Georgia", "Impact", "Segoe UI", "Tahoma",
-            "Times New Roman", "Trebuchet MS", "Verdana"
-        };
-        foreach (var f in fonts)
+        // Every installed system font, alphabetical, each previewed in itself
+        var names = Fonts.SystemFontFamilies
+            .Select(f => f.Source)
+            .Where(n => n.Length > 0 && !n.StartsWith("Global", StringComparison.OrdinalIgnoreCase))
+            .Distinct()
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var f in names)
             FontFamilyCombo.Items.Add(new ComboBoxItem
             {
                 Content    = f,
                 FontFamily = new FontFamily(f),
             });
-        FontFamilyCombo.SelectedIndex = 0;
+
+        int arial = names.FindIndex(n => n.Equals("Arial", StringComparison.OrdinalIgnoreCase));
+        FontFamilyCombo.SelectedIndex = arial >= 0 ? arial : 0;
     }
 
     private void FontFamily_Changed(object sender, SelectionChangedEventArgs e)
@@ -3449,7 +3658,9 @@ public partial class MainWindow : Window
                 ? new CroppedBitmap(rendered, new Int32Rect(_pendCropX, _pendCropY, _pendCropW, _pendCropH))
                 : (BitmapSource)rendered;
 
-            if (_markupStrokes.Count > 0)
+            exportSrc = CompositeDesignOnExport(exportSrc);
+
+            if (ShouldExportMarkup)
                 exportSrc = CompositeMarkupOnExport(exportSrc);
 
             // Resize if maxWidth specified
@@ -3501,14 +3712,11 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrEmpty(folder) || !System.IO.Directory.Exists(folder)) return;
 
-        var supportedExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { ".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".tif", ".heic", ".heif" };
-
         string[] files;
         try
         {
             files = System.IO.Directory.GetFiles(folder)
-                .Where(f => supportedExts.Contains(System.IO.Path.GetExtension(f)))
+                .Where(f => SupportedInputExtensions.Contains(System.IO.Path.GetExtension(f)))
                 .OrderBy(f => f)
                 .ToArray();
         }
@@ -3777,11 +3985,8 @@ public partial class MainWindow : Window
         string outputDir = outputDlg.FolderName;
         var    adjSnap   = _adj.Clone();
 
-        var supportedExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { ".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".tif" };
-
         var files = System.IO.Directory.GetFiles(inputDir, "*.*")
-            .Where(f => supportedExts.Contains(System.IO.Path.GetExtension(f)))
+            .Where(f => SupportedInputExtensions.Contains(System.IO.Path.GetExtension(f)))
             .ToArray();
 
         if (files.Length == 0)

@@ -532,6 +532,9 @@
                         MouseDown="Markup_MouseDown"
                         Background="Transparent" Cursor="Cross"/>
 
+                <!-- Design overlays: frame + watermark preview -->
+                <Canvas x:Name="DesignCanvas" Visibility="Collapsed" IsHitTestVisible="False"/>
+
                 <!-- Crop overlay -->
                 <Canvas x:Name="CropCanvas" Visibility="Collapsed" Background="Transparent">
                     <Rectangle x:Name="CropDimOverlay" Fill="#88000000"/>
@@ -637,7 +640,7 @@
 
                     <!-- Tabs -->
                     <Border Grid.Row="0" BorderThickness="0,0,0,1" BorderBrush="#1A1A1F" Background="#111114">
-                        <UniformGrid Columns="4" Margin="8,8,8,0">
+                        <UniformGrid Columns="3" Margin="8,8,8,0">
                             <ToggleButton x:Name="TabAdjust"  Content="Adjust"  Style="{StaticResource TabBtn}"
                                           IsChecked="True"  Click="Tab_Click" Tag="Adjust"  FontSize="11"/>
                             <ToggleButton x:Name="TabFilters" Content="Filters" Style="{StaticResource TabBtn}"
@@ -646,6 +649,10 @@
                                           IsChecked="False" Click="Tab_Click" Tag="Crop"    FontSize="11"/>
                             <ToggleButton x:Name="TabMarkup"  Content="Markup"  Style="{StaticResource TabBtn}"
                                           IsChecked="False" Click="Tab_Click" Tag="Markup"  FontSize="11"/>
+                            <ToggleButton x:Name="TabDesign"  Content="Design"  Style="{StaticResource TabBtn}"
+                                          IsChecked="False" Click="Tab_Click" Tag="Design"  FontSize="11"/>
+                            <ToggleButton x:Name="TabLayers"  Content="Layers"  Style="{StaticResource TabBtn}"
+                                          IsChecked="False" Click="Tab_Click" Tag="Layers"  FontSize="11"/>
                         </UniformGrid>
                     </Border>
 
@@ -726,16 +733,16 @@
                                                     <Grid.ColumnDefinitions>
                                                         <ColumnDefinition/><ColumnDefinition/><ColumnDefinition/>
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="Subtle" Foreground="#55556A" FontSize="11" Grid.Column="0"/>
-                                                    <TextBlock Text="Default" Foreground="#8E8EA0" FontSize="11"
+                                                    <TextBlock Text="Dramatic" Foreground="#55556A" FontSize="11" Grid.Column="0"/>
+                                                    <TextBlock Text="Natural" Foreground="#8E8EA0" FontSize="11"
                                                                FontWeight="Medium" Grid.Column="1" HorizontalAlignment="Center"/>
-                                                    <TextBlock Text="Strong" Foreground="#55556A" FontSize="11"
+                                                    <TextBlock Text="Bright" Foreground="#55556A" FontSize="11"
                                                                HorizontalAlignment="Right" Grid.Column="2"/>
                                                 </Grid>
                                                 <Slider x:Name="AutoIntensitySlider" Style="{StaticResource IntensitySlider}"
                                                         Minimum="-100" Maximum="100" Value="0" SmallChange="1" LargeChange="10"
                                                         ValueChanged="AutoIntensity_Changed"/>
-                                                <TextBlock x:Name="AutoIntensityLabel" Text="Default"
+                                                <TextBlock x:Name="AutoIntensityLabel" Text="Natural"
                                                            Foreground="#8E8EA0" FontSize="11" HorizontalAlignment="Center"
                                                            Margin="0,4,0,0"/>
                                             </StackPanel>
@@ -1056,10 +1063,10 @@
                                 </Grid>
 
                                 <TextBlock Text="FONT" Style="{StaticResource SectionLabel}"/>
-                                <ComboBox x:Name="FontFamilyCombo" IsEnabled="False"
+                                <ComboBox x:Name="FontFamilyCombo" Style="{StaticResource DarkCombo}"
+                                          IsEnabled="False"
                                           SelectionChanged="FontFamily_Changed"
-                                          Margin="0,0,0,12" Height="28"
-                                          Foreground="Black"/>
+                                          Margin="0,0,0,12"/>
 
                                 <TextBlock Text="FONT SIZE" Style="{StaticResource SectionLabel}"/>
                                 <Grid Margin="0,0,0,12">
@@ -1086,6 +1093,134 @@
                                         Clear
                                     </Button>
                                 </UniformGrid>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- DESIGN PANEL -->
+                        <ScrollViewer x:Name="DesignPanel" Visibility="Collapsed"
+                                      Style="{StaticResource DarkScroll}" Padding="12">
+                            <StackPanel>
+                                <TextBlock Text="COLLAGE" Style="{StaticResource SectionLabel}"/>
+                                <TextBlock Text="Build a new editable canvas from multiple photos." Style="{StaticResource MutedText}"
+                                           TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <UniformGrid Columns="2" Margin="0,0,0,12">
+                                    <Button x:Name="CollageSplitBtn" Style="{StaticResource ToolBtn}" IsEnabled="False"
+                                            Click="Collage_Click" Tag="Split" Margin="0,0,4,4">
+                                        <StackPanel>
+                                            <TextBlock Text="2" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Split" FontSize="10" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button x:Name="CollageStackBtn" Style="{StaticResource ToolBtn}" IsEnabled="False"
+                                            Click="Collage_Click" Tag="Stack" Margin="4,0,0,4">
+                                        <StackPanel>
+                                            <TextBlock Text="3" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Stack" FontSize="10" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button x:Name="CollageGridBtn" Style="{StaticResource ToolBtn}" IsEnabled="False"
+                                            Click="Collage_Click" Tag="Grid4" Margin="0,4,4,0">
+                                        <StackPanel>
+                                            <TextBlock Text="4" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Grid" FontSize="10" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button x:Name="CollageFeatureBtn" Style="{StaticResource ToolBtn}" IsEnabled="False"
+                                            Click="Collage_Click" Tag="Feature" Margin="4,4,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="1+" FontSize="18" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Feature" FontSize="10" Foreground="#8E8EA0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                </UniformGrid>
+
+                                <Border Height="1" Background="#1A1A1F" Margin="0,0,0,10"/>
+
+                                <TextBlock Text="FRAME" Style="{StaticResource SectionLabel}"/>
+                                <ComboBox x:Name="FrameStyleCombo" Style="{StaticResource DarkCombo}" IsEnabled="False"
+                                          SelectionChanged="Frame_Changed" Margin="0,0,0,8">
+                                    <ComboBoxItem Content="None" Tag="None" IsSelected="True"/>
+                                    <ComboBoxItem Content="Classic white" Tag="White"/>
+                                    <ComboBoxItem Content="Thin white" Tag="ThinWhite"/>
+                                    <ComboBoxItem Content="Gallery black" Tag="Black"/>
+                                    <ComboBoxItem Content="Film black" Tag="FilmBlack"/>
+                                    <ComboBoxItem Content="Warm mat" Tag="WarmMat"/>
+                                    <ComboBoxItem Content="Rounded white" Tag="RoundedWhite"/>
+                                    <ComboBoxItem Content="Polaroid" Tag="Polaroid"/>
+                                    <ComboBoxItem Content="Soft shadow" Tag="Shadow"/>
+                                    <ComboBoxItem Content="Vignette edge" Tag="VignetteEdge"/>
+                                    <ComboBoxItem Content="Double white" Tag="Double"/>
+                                    <ComboBoxItem Content="Gold" Tag="Gold"/>
+                                    <ComboBoxItem Content="Silver" Tag="Silver"/>
+                                    <ComboBoxItem Content="Walnut wood" Tag="Walnut"/>
+                                    <ComboBoxItem Content="Navy" Tag="Navy"/>
+                                    <ComboBoxItem Content="Forest green" Tag="Forest"/>
+                                    <ComboBoxItem Content="Burgundy" Tag="Burgundy"/>
+                                </ComboBox>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="38"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Slider x:Name="FrameSizeSlider" Style="{StaticResource EditSlider}"
+                                            Minimum="0" Maximum="18" Value="5" IsEnabled="False"
+                                            ValueChanged="Frame_Changed"/>
+                                    <TextBlock x:Name="FrameSizeLabel" Text="5" Grid.Column="1"
+                                               Foreground="#8E8EA0" FontSize="12" VerticalAlignment="Center"
+                                               HorizontalAlignment="Right"/>
+                                </Grid>
+
+                                <TextBlock Text="WATERMARK" Style="{StaticResource SectionLabel}"/>
+                                <TextBox x:Name="WatermarkTextBox" Text="" IsEnabled="False"
+                                         TextChanged="Watermark_Changed" Height="32" Padding="10,0,10,0"
+                                         Background="#28282F" Foreground="White" CaretBrush="White"
+                                         BorderBrush="#3A3A48" BorderThickness="1"
+                                         VerticalContentAlignment="Center" Margin="0,0,0,8"/>
+                                <ComboBox x:Name="WatermarkPositionCombo" Style="{StaticResource DarkCombo}" IsEnabled="False"
+                                          SelectionChanged="Watermark_Changed" Margin="0,0,0,8">
+                                    <ComboBoxItem Content="Bottom right" Tag="BottomRight" IsSelected="True"/>
+                                    <ComboBoxItem Content="Bottom left" Tag="BottomLeft"/>
+                                    <ComboBoxItem Content="Top right" Tag="TopRight"/>
+                                    <ComboBoxItem Content="Top left" Tag="TopLeft"/>
+                                    <ComboBoxItem Content="Center" Tag="Center"/>
+                                </ComboBox>
+                                <TextBlock Text="OPACITY" Style="{StaticResource SectionLabel}"/>
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="38"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Slider x:Name="WatermarkOpacitySlider" Style="{StaticResource EditSlider}"
+                                            Minimum="10" Maximum="100" Value="70" IsEnabled="False"
+                                            ValueChanged="Watermark_Changed"/>
+                                    <TextBlock x:Name="WatermarkOpacityLabel" Text="70" Grid.Column="1"
+                                               Foreground="#8E8EA0" FontSize="12" VerticalAlignment="Center"
+                                               HorizontalAlignment="Right"/>
+                                </Grid>
+                                <TextBlock Text="SIZE" Style="{StaticResource SectionLabel}"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="38"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Slider x:Name="WatermarkSizeSlider" Style="{StaticResource EditSlider}"
+                                            Minimum="12" Maximum="72" Value="28" IsEnabled="False"
+                                            ValueChanged="Watermark_Changed"/>
+                                    <TextBlock x:Name="WatermarkSizeLabel" Text="28" Grid.Column="1"
+                                               Foreground="#8E8EA0" FontSize="12" VerticalAlignment="Center"
+                                               HorizontalAlignment="Right"/>
+                                </Grid>
+                            </StackPanel>
+                        </ScrollViewer>
+
+                        <!-- LAYERS PANEL -->
+                        <ScrollViewer x:Name="LayersPanel" Visibility="Collapsed"
+                                      Style="{StaticResource DarkScroll}" Padding="12">
+                            <StackPanel>
+                                <TextBlock Text="LAYERS" Style="{StaticResource SectionLabel}"/>
+                                <TextBlock Text="Checked layers are visible in preview and included when exporting." Style="{StaticResource MutedText}"
+                                           TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                <StackPanel x:Name="LayerList"/>
                             </StackPanel>
                         </ScrollViewer>
                     </Grid>
