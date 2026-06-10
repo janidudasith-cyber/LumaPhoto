@@ -2,7 +2,7 @@
 
 ---
 
-## v1.3 — 2026-06-10
+## v1.2 — 2026-06-10
 
 ### AI Auto Enhance — fully live 🎉
 
@@ -39,34 +39,30 @@
 
 ### Design
 
-- **7 new frame styles** — Double white, Gold, Silver, Walnut wood, Navy,
-  Forest green, and Burgundy.
+- **Collage builder** — Split, Stack, Grid, and Feature layouts that create a new
+  editable canvas from multiple photos.
 - **Collage: arrange before you create** — After picking photos, a live preview of the
   layout opens. Click two photos to swap their positions, click an empty slot to add
   a photo into it. *Create* is enabled once every slot is filled — no more
   half-empty collages.
+- **Photo frames** — 14 frame styles: Classic/Thin/Rounded white, Gallery/Film black,
+  Polaroid, Soft shadow, Warm mat, Vignette edge, plus new Double white, Gold, Silver,
+  Walnut wood, Navy, Forest green, and Burgundy.
+- **Watermarks** — Per-photo watermark text with position, opacity, and size controls.
+- **Layers panel** — A stack view for Watermark, Markup, Frame, and Photo layers,
+  with export visibility toggles.
 
 ---
 
-## v1.2 — 2026-06-08
+### Auto Enhance — under the hood
 
-### Design Tools
-
-- **Collage builder** — Added Split, Stack, Grid, and Feature collage layouts that create a new editable canvas from multiple photos.
-- **Photo frames** — Added Classic white, Gallery black, Polaroid, and Soft shadow frame overlays.
-- **Watermarks** — Added per-photo watermark text with position, opacity, and size controls.
-- **Layers panel** — Added a simple stack view for Watermark, Markup, Frame, and Photo layers, with export visibility toggles.
-
----
-
-### Auto Enhance Neural Model
-
-- **Neural Auto Enhance re-enabled** — When `enhancer_params.onnx` is present next to the app, Auto Enhance now runs the trained direct-parameter model.
-- **Three-style Auto slider** — When FiveK expert models are present, the Auto slider blends `Expert E` dramatic on the left, `Expert C` natural in the middle, and `Expert A` bright/vibrant on the right.
-- **Safe NN blend** — Neural predictions are blended with rule-based parameters and clamped to sensible ranges, so the app keeps a stable fallback while gaining better learned edits.
-- **Training flow improved** — FiveK training now supports explicit expert selection (`--fivek_expert c/a/e`) and common folder layouts (`input/`, `raw/`, `expertC/`, `c/`).
-- **ONNX export improved** — Export now prefers EMA weights from `last.pt` when present.
-- **Old model guard** — Direct neural Auto Enhance now requires `enhancer_params.json`; unlabeled old PPR10K-era models are ignored so they cannot make general photos dull or desaturated.
+- **Safe NN blend** — Neural predictions are blended with rule-based parameters and clamped
+  to sensible ranges, so the app keeps a stable fallback while gaining learned edits.
+- **Manifest-guarded models** — Each `.onnx` requires a matching `.json` manifest;
+  unlabeled old PPR10K-era models are ignored so they cannot make photos dull or desaturated.
+- **Training flow** — FiveK training supports explicit expert selection (`--fivek_expert c/a/e`)
+  and common folder layouts (`input/`, `raw/`, `expertC/`, `c/`); a Kaggle multi-expert
+  notebook queues/resumes runs and writes manifests automatically.
 
 ---
 
