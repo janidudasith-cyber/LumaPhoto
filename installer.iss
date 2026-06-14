@@ -3,7 +3,7 @@
 ; Then open this file in Inno Setup Compiler and click Build > Compile
 
 #define MyAppName    "LumaPhoto"
-#define MyAppVersion "1.2"
+#define MyAppVersion "1.3"
 #define MyAppPublisher "LumaPhoto"
 #define MyAppURL     "https://github.com/janidudasith-cyber/LumaPhoto"
 #define MyAppExe     "LumaPhoto.exe"

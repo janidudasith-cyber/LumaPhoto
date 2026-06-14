@@ -98,7 +98,7 @@ Batch export also defaults to JPEG (`SelectedIndex = 0` on the format ComboBox).
 
 1. `AutoBtn_Click` → `ImageProcessor.Analyze()` (synchronous, rule-based) → `ComputeAutoParams()` → stores as `_autoBaseParams`.
 2. `RunNeuralEnhancerAsync()` fires in background → `NeuralEnhancer.PredictParams()` or `.Analyze()` → updates `_autoBaseParams` on the dispatcher.
-3. `ApplyAutoAtSliderValue(v)` linearly interpolates between `_autoPreState` (v=−100) and `_autoBaseParams` (v=0), pushing 70% stronger at v=+100.
+3. `ApplyAutoStyleAtSliderValue(v)` blends the three FiveK expert endpoints (`_autoDramaticParams`/`_autoNaturalParams`/`_autoBrightParams`) when the models are loaded — Dramatic (v=−100) → Natural (v=0) → Bright (v=+100); it falls back to a pre-auto↔auto interpolation when only rule-based params exist.
 
 ### Python training
 

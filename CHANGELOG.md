@@ -2,6 +2,23 @@
 
 ---
 
+## v1.3 — 2026-06-10
+
+### Collage
+
+- **Reposition photos inside their slots** — In the collage arrange dialog you can now
+  **drag any photo to pan it within its slot**, choosing exactly which part shows instead
+  of being locked to a centre crop. Click (without dragging) still selects two photos to
+  swap, and clicking an empty slot still adds a photo. The framing you set in the preview
+  is rendered pixel-faithfully into the final collage.
+
+### Internal
+
+- Removed dead auto-enhance code and tightened `.gitignore` so build/scratch artifacts
+  never get committed.
+
+---
+
 ## v1.2 — 2026-06-10
 
 ### AI Auto Enhance — fully live 🎉

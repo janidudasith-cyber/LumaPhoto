@@ -2,6 +2,7 @@
 LumaPhoto/bin/
 LumaPhoto/obj/
 publish/
+publish_*/
 installer_output/
 
 # Python
@@ -22,7 +23,14 @@ training/training/__pycache__/
 .DS_Store
 Thumbs.db
 
-# IDE
+# IDE / agent
 .vs/
 *.user
 *.suo
+.claude/
+
+# Personal / scratch artifacts (never publish)
+*.docx
+*.zip
+*.log
+training/*.log
