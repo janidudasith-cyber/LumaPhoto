@@ -462,7 +462,7 @@ public partial class MainWindow
 
         stack.Children.Add(new TextBlock
         {
-            Text = "Click a photo, then another to swap places. Click an empty slot to add a photo.",
+            Text = "Drag a photo to reposition it inside its slot. Click a photo, then another to swap places. Click an empty slot to add a photo.",
             Foreground = new SolidColorBrush(Color.FromRgb(0x8E, 0x8E, 0xA0)),
             FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(2, 0, 0, 10)
         });
@@ -477,8 +477,47 @@ public partial class MainWindow
         };
 
         int selected = -1;
-        var cells = new Border[n];
-        Button createBtn = null!;   // assigned below, used by RefreshCells
+        var cells   = new Border[n];
+        var offsets = new Point[n];           // per-slot pan, each axis -0.5…+0.5 (0 = centred)
+        Button createBtn = null!;             // assigned below, used by RefreshCells
+
+        // Drag state — pan the image inside its slot
+        int   dragIdx   = -1;
+        bool  dragMoved = false;
+        Point dragStart = default, dragStartFrac = default;
+
+        // Renders one cell: image cover-scaled and shifted by its offset, or a ＋ placeholder
+        void SetCellContent(int i)
+        {
+            var cell = cells[i];
+            if (slotImages[i] == null)
+            {
+                cell.Child = new TextBlock
+                {
+                    Text = "＋", FontSize = 20,
+                    Foreground = new SolidColorBrush(Color.FromRgb(0x8E, 0x8E, 0xA0)),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment   = VerticalAlignment.Center
+                };
+                return;
+            }
+            var img = slotImages[i]!;
+            double cw = Math.Max(1, cell.Width - 4), chh = Math.Max(1, cell.Height - 4);
+            double sc = Math.Max(cw / img.PixelWidth, chh / img.PixelHeight);
+            double dw = img.PixelWidth * sc, dh = img.PixelHeight * sc;
+            double ox = (dw - cw)  * (0.5 + offsets[i].X);
+            double oy = (dh - chh) * (0.5 + offsets[i].Y);
+            var image = new Image
+            {
+                Source = img, Width = dw, Height = dh,
+                Stretch = Stretch.Fill, IsHitTestVisible = false
+            };
+            var cv = new Canvas { ClipToBounds = true, Background = Brushes.Transparent };
+            Canvas.SetLeft(image, -ox);
+            Canvas.SetTop(image,  -oy);
+            cv.Children.Add(image);
+            cell.Child = cv;
+        }
 
         void RefreshCells()
         {
@@ -487,16 +526,7 @@ public partial class MainWindow
                 cells[i].BorderBrush = i == selected
                     ? new SolidColorBrush(Color.FromRgb(0x0A, 0x84, 0xFF))
                     : new SolidColorBrush(Color.FromArgb(0x55, 0x00, 0x00, 0x00));
-                if (slotImages[i] != null)
-                    cells[i].Child = new Image { Source = slotImages[i], Stretch = Stretch.UniformToFill };
-                else
-                    cells[i].Child = new TextBlock
-                    {
-                        Text = "＋", FontSize = 20,
-                        Foreground = new SolidColorBrush(Color.FromRgb(0x8E, 0x8E, 0xA0)),
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        VerticalAlignment   = VerticalAlignment.Center
-                    };
+                SetCellContent(i);
             }
             createBtn.IsEnabled = slotImages.All(s => s != null);
             createBtn.Opacity   = createBtn.IsEnabled ? 1.0 : 0.45;
@@ -515,9 +545,49 @@ public partial class MainWindow
             };
             Canvas.SetLeft(cell, r.X * scale);
             Canvas.SetTop(cell,  r.Y * scale);
+
+            cell.MouseLeftButtonDown += (_, ev) =>
+            {
+                if (slotImages[idx] == null) return;   // empty slot: only the Up/click handler acts
+                dragIdx       = idx;
+                dragMoved     = false;
+                dragStart     = ev.GetPosition(canvas);
+                dragStartFrac = offsets[idx];
+                cell.CaptureMouse();
+                ev.Handled = true;
+            };
+            cell.MouseMove += (_, ev) =>
+            {
+                if (dragIdx != idx || ev.LeftButton != MouseButtonState.Pressed) return;
+                var pos = ev.GetPosition(canvas);
+                double dx = pos.X - dragStart.X, dy = pos.Y - dragStart.Y;
+                if (!dragMoved && Math.Abs(dx) < 4 && Math.Abs(dy) < 4) return;
+                dragMoved   = true;
+                cell.Cursor = Cursors.SizeAll;
+
+                var img = slotImages[idx]!;
+                double cw = Math.Max(1, cell.Width - 4), chh = Math.Max(1, cell.Height - 4);
+                double sc = Math.Max(cw / img.PixelWidth, chh / img.PixelHeight);
+                double exX = img.PixelWidth * sc - cw, exY = img.PixelHeight * sc - chh;
+                // Dragging right reveals more of the image's left side
+                double fx = dragStartFrac.X - (exX > 1 ? dx / exX : 0);
+                double fy = dragStartFrac.Y - (exY > 1 ? dy / exY : 0);
+                offsets[idx] = new Point(Math.Clamp(fx, -0.5, 0.5), Math.Clamp(fy, -0.5, 0.5));
+                SetCellContent(idx);
+            };
             cell.MouseLeftButtonUp += (_, ev) =>
             {
                 ev.Handled = true;
+                bool wasDrag = dragMoved && dragIdx == idx;
+                if (dragIdx == idx)
+                {
+                    cell.ReleaseMouseCapture();
+                    cell.Cursor = Cursors.Hand;
+                    dragIdx = -1;
+                }
+                dragMoved = false;
+                if (wasDrag) return;                   // pan finished — not a click
+
                 if (slotImages[idx] == null)
                 {
                     var pick = new OpenFileDialog { Title = "Choose a photo for this slot", Filter = ImageOpenFilter };
@@ -528,6 +598,7 @@ public partial class MainWindow
                             Mouse.OverrideCursor = Cursors.Wait;
                             var (px, iw, ih) = ImageProcessor.LoadImageFile(pick.FileName);
                             slotImages[idx] = ImageProcessor.BufferToBitmap(px, iw, ih);
+                            offsets[idx] = default;
                         }
                         catch (Exception ex) { ShowToast("Could not open", ex.Message, success: false); }
                         finally { Mouse.OverrideCursor = null; }
@@ -538,6 +609,7 @@ public partial class MainWindow
                 else
                 {
                     (slotImages[selected], slotImages[idx]) = (slotImages[idx], slotImages[selected]);
+                    (offsets[selected],    offsets[idx])    = (offsets[idx],    offsets[selected]);
                     selected = -1;
                 }
                 RefreshCells();
@@ -570,7 +642,7 @@ public partial class MainWindow
             {
                 Mouse.OverrideCursor = Cursors.Wait;
                 PushHistory();
-                var collage = BuildCollageBitmap(layout, slotImages.Select(s => s!).ToArray());
+                var collage = BuildCollageBitmap(layout, slotImages.Select(s => s!).ToArray(), offsets);
                 ReplaceSourceWithBitmap(collage, "collage");
                 ShowToast("Collage Created", "Your collage is now the editable photo.");
             }
@@ -584,7 +656,7 @@ public partial class MainWindow
         dlg.ShowDialog();
     }
 
-    private BitmapSource BuildCollageBitmap(string layout, BitmapSource[] images)
+    private BitmapSource BuildCollageBitmap(string layout, BitmapSource[] images, Point[]? offsets = null)
     {
         int outW = Math.Clamp(images[0].PixelWidth, 1200, 2400);
         int outH = layout == "Stack" ? (int)(outW * 1.35) : outW;
@@ -596,7 +668,8 @@ public partial class MainWindow
         {
             dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(245, 245, 247)), null, new Rect(0, 0, outW, outH));
             for (int i = 0; i < slots.Length && i < images.Length; i++)
-                DrawImageCover(dc, images[i], slots[i], 10);
+                DrawImageCover(dc, images[i], slots[i], 10,
+                    offsets != null && i < offsets.Length ? offsets[i] : default);
         }
 
         var rtb = new RenderTargetBitmap(outW, outH, 96, 96, PixelFormats.Pbgra32);
@@ -641,12 +714,17 @@ public partial class MainWindow
         yield return new Rect(2 * g + cell, 2 * g + cell, cell, cell);
     }
 
-    private static void DrawImageCover(DrawingContext dc, BitmapSource src, Rect slot, double radius)
+    // offsetFrac: -0.5…+0.5 per axis — how far the cover-scaled image is shifted
+    // within the slot (0,0 = centred). Same convention as the arrange dialog.
+    private static void DrawImageCover(DrawingContext dc, BitmapSource src, Rect slot, double radius,
+        Point offsetFrac = default)
     {
         double scale = Math.Max(slot.Width / src.PixelWidth, slot.Height / src.PixelHeight);
         double dw = src.PixelWidth * scale;
         double dh = src.PixelHeight * scale;
-        var dest = new Rect(slot.X - (dw - slot.Width) / 2, slot.Y - (dh - slot.Height) / 2, dw, dh);
+        double ox = (dw - slot.Width)  * (0.5 + Math.Clamp(offsetFrac.X, -0.5, 0.5));
+        double oy = (dh - slot.Height) * (0.5 + Math.Clamp(offsetFrac.Y, -0.5, 0.5));
+        var dest = new Rect(slot.X - ox, slot.Y - oy, dw, dh);
 
         dc.PushClip(new RectangleGeometry(slot, radius, radius));
         dc.DrawImage(src, dest);
