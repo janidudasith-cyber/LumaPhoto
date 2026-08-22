@@ -2,6 +2,33 @@
 
 ---
 
+## v1.4 — 2026-08-19
+
+### Remove Background ✂️
+
+- **One-click subject cut-out** — New *Remove Background* button at the top of the
+  Design tab. Detects the subject, erases the background, and leaves a transparent
+  cut-out you can drop into a collage, frame, or export on its own.
+- **Runs entirely on your machine** — Local ONNX inference (U²-Net Lite). Nothing is
+  uploaded, there is no per-image cost, and it works offline.
+- **Three edge styles** — *Balanced* for everyday shots, *Hair* for soft subjects like
+  hair, fur, and sheer fabric, and *Product* for crisp-edged items like packaging and
+  logos. Switching styles re-cuts from the original, so presets never compound.
+- Uses your GPU via DirectML when available, falling back to CPU automatically —
+  the active model and provider are shown under the button.
+
+> **Tip:** export as **PNG** to keep the transparency. JPEG has no alpha channel and
+> will flatten the cut-out onto a solid background.
+
+### Internal
+
+- Inference lives in a new **`LumaPhoto.Vision`** class library — plain `net8.0` with
+  no WPF dependency, so the same engine can back a headless batch tool later.
+- Docs moved from `CLAUDE.md` to `DEVELOPMENT.md`, and corrected several stale claims
+  (tab list, export formats).
+
+---
+
 ## v1.3 — 2026-06-10
 
 ### Collage

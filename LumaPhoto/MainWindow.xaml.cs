@@ -227,7 +227,7 @@ public partial class MainWindow : Window
 
         SourceInitialized += (_, _) => ApplyDarkTitleBar();
         Loaded  += (_, _) => { UpdateLayout(); _ = CheckForUpdateAsync(); };
-        Closed  += (_, _) => _neuralEnhancer?.Dispose();
+        Closed  += (_, _) => { _neuralEnhancer?.Dispose(); _bgRemover?.Dispose(); };
         SizeChanged += (_, _) => { if (_cropping) ClampCropToImage(); RefreshCropOverlay(); RefreshDesignOverlay(); if (_splitViewOn) UpdateSplitView(); };
         this.Icon = CreateAppIcon();
 
@@ -522,6 +522,7 @@ public partial class MainWindow : Window
         UndoCropBtn.IsEnabled = false;
         RevertBtn.IsEnabled = true;
         SetControlsEnabled(true);
+        ResetBackgroundRemovalUi();
         MarkupCanvas.Visibility       = Visibility.Visible;   // visible on all tabs
         MarkupCanvas.IsHitTestVisible = TabMarkup.IsChecked == true;
         MarkupCanvas.Opacity          = 1.0;
@@ -620,6 +621,7 @@ public partial class MainWindow : Window
         RedoBtn.IsEnabled = _future.Count  > 0 && on;
         UndoMarkupBtn.IsEnabled  = false;
         ClearMarkupBtn.IsEnabled = on;
+        RemoveBgBtn.IsEnabled       = on;
         CollageSplitBtn.IsEnabled   = on;
         CollageStackBtn.IsEnabled   = on;
         CollageGridBtn.IsEnabled    = on;
