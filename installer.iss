@@ -3,7 +3,7 @@
 ; Then open this file in Inno Setup Compiler and click Build > Compile
 
 #define MyAppName    "LumaPhoto"
-#define MyAppVersion "1.3"
+#define MyAppVersion "1.4"
 #define MyAppPublisher "LumaPhoto"
 #define MyAppURL     "https://github.com/janidudasith-cyber/LumaPhoto"
 #define MyAppExe     "LumaPhoto.exe"
@@ -43,6 +43,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#SourceDir}\{#MyAppExe}";         DestDir: "{app}"; Flags: ignoreversion
+; Background-removal model. Kept a loose file (not bundled into the single-file
+; exe) so AppContext.BaseDirectory resolution finds it at Assets\Models.
+#if FileExists(SourceDir + "\Assets\Models\u2netp.onnx")
+Source: "{#SourceDir}\Assets\Models\u2netp.onnx"; DestDir: "{app}\Assets\Models"; Flags: ignoreversion
+#endif
 #if FileExists(SourceDir + "\enhancer_params.onnx") && FileExists(SourceDir + "\enhancer_params.json")
 Source: "{#SourceDir}\enhancer_params.onnx"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\enhancer_params.json"; DestDir: "{app}"; Flags: ignoreversion

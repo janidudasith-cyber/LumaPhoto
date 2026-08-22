@@ -1100,6 +1100,49 @@
                         <ScrollViewer x:Name="DesignPanel" Visibility="Collapsed"
                                       Style="{StaticResource DarkScroll}" Padding="12">
                             <StackPanel>
+                                <TextBlock Text="BACKGROUND" Style="{StaticResource SectionLabel}"/>
+                                <TextBlock Text="Cut out the subject and make the background transparent. Runs on your machine — nothing is uploaded."
+                                           Style="{StaticResource MutedText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <Button x:Name="RemoveBgBtn" Style="{StaticResource PrimaryBtn}"
+                                        Height="34" Click="RemoveBg_Click" IsEnabled="False" Margin="0,0,0,6"
+                                        ToolTip="Detect the subject and erase the background (export as PNG to keep transparency)">
+                                    ✂ Remove Background
+                                </Button>
+                                <TextBlock x:Name="RemoveBgStatus" Text="" Foreground="#55556A" FontSize="11"
+                                           TextWrapping="Wrap" Margin="0,0,0,2"/>
+
+                                <!-- Edge presets — shown after a removal so it can be re-run tighter/softer -->
+                                <Border x:Name="RemoveBgRefinePanel" Visibility="Collapsed" Margin="0,6,0,0">
+                                    <StackPanel>
+                                        <TextBlock Text="EDGE STYLE" Style="{StaticResource SectionLabel}" Margin="0,0,0,4"/>
+                                        <UniformGrid Columns="3">
+                                            <ToggleButton x:Name="BgEdgeBalanced" Style="{StaticResource MarkupToolBtn}"
+                                                          Height="46" Margin="0,0,3,0" IsChecked="True"
+                                                          Tag="Default" Click="RemoveBgEdge_Click"
+                                                          ToolTip="Balanced edges — good default">
+                                                <TextBlock Text="Balanced" FontSize="11" Foreground="#F0F0F2"
+                                                           HorizontalAlignment="Center"/>
+                                            </ToggleButton>
+                                            <ToggleButton x:Name="BgEdgeSoft" Style="{StaticResource MarkupToolBtn}"
+                                                          Height="46" Margin="2,0,2,0"
+                                                          Tag="Soft" Click="RemoveBgEdge_Click"
+                                                          ToolTip="Softer edges — hair, fur, sheer fabric">
+                                                <TextBlock Text="Hair" FontSize="11" Foreground="#F0F0F2"
+                                                           HorizontalAlignment="Center"/>
+                                            </ToggleButton>
+                                            <ToggleButton x:Name="BgEdgeHard" Style="{StaticResource MarkupToolBtn}"
+                                                          Height="46" Margin="3,0,0,0"
+                                                          Tag="Hard" Click="RemoveBgEdge_Click"
+                                                          ToolTip="Crisp edges — products, logos, packaging">
+                                                <TextBlock Text="Product" FontSize="11" Foreground="#F0F0F2"
+                                                           HorizontalAlignment="Center"/>
+                                            </ToggleButton>
+                                        </UniformGrid>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Height="1" Background="#1A1A1F" Margin="0,12,0,10"/>
+
                                 <TextBlock Text="COLLAGE" Style="{StaticResource SectionLabel}"/>
                                 <TextBlock Text="Build a new editable canvas from multiple photos." Style="{StaticResource MutedText}"
                                            TextWrapping="Wrap" Margin="0,0,0,8"/>

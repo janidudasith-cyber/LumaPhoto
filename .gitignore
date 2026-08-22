@@ -1,6 +1,6 @@
-# Build outputs
-LumaPhoto/bin/
-LumaPhoto/obj/
+# Build outputs — pattern applies to every project, not just LumaPhoto/
+bin/
+obj/
 publish/
 publish_*/
 installer_output/
@@ -23,7 +23,7 @@ training/training/__pycache__/
 .DS_Store
 Thumbs.db
 
-# IDE / agent
+# IDE
 .vs/
 *.user
 *.suo

@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- Deliberately NO <UseWPF>. This assembly must stay UI-framework agnostic
+         so the standalone batch tool can reference it without dragging in WPF. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.19.2" />
+
+    <!-- Swap the line above for this one to get GPU inference on Windows.
+         DirectML works on AMD/Intel/NVIDIA and needs no CUDA install.
+         The code falls back to CPU automatically if the provider is missing. -->
+    <!-- <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.19.2" /> -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Drop u2netp.onnx (~4.7 MB) here. Ship the full u2net.onnx (~176 MB)
+         as an optional download rather than bloating the installer.
+         ExcludeFromSingleFile keeps the model a loose file next to the exe so
+         AppContext.BaseDirectory resolution still works in a single-file publish. -->
+    <Content Include="Assets\Models\**\*.onnx" Condition="Exists('Assets\Models')">
+      <Link>Assets\Models\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+  </ItemGroup>
+
+</Project>
