@@ -21,9 +21,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Drop u2netp.onnx (~4.7 MB) here. Ship the full u2net.onnx (~176 MB)
-         as an optional download rather than bloating the installer.
-         ExcludeFromSingleFile keeps the model a loose file next to the exe so
+    <!-- Any .onnx here is copied next to the exe for local testing of the
+         auto-select path (EnsureRemover picks the best model present). Only
+         u2netp.onnx (~5 MB) actually ships — see installer.iss; the heavier
+         group-photo / hair models are an in-app on-demand download (ModelDownloader).
+         ExcludeFromSingleFile keeps each model a loose file next to the exe so
          AppContext.BaseDirectory resolution still works in a single-file publish. -->
     <Content Include="Assets\Models\**\*.onnx" Condition="Exists('Assets\Models')">
       <Link>Assets\Models\%(Filename)%(Extension)</Link>

@@ -25,16 +25,6 @@ public sealed class U2NetBackgroundRemover : IBackgroundRemover
     public U2NetBackgroundRemover(ModelDescriptor descriptor, string modelPath, bool preferGpu = true)
         => _sessions = new OnnxSessionManager(descriptor, modelPath, preferGpu);
 
-    /// <summary>Convenience factory resolving the model from the app's Assets\Models folder.</summary>
-    public static U2NetBackgroundRemover FromAppFolder(
-        ModelDescriptor? descriptor = null, bool preferGpu = true)
-    {
-        descriptor ??= ModelDescriptor.U2NetP;
-        var path = Path.Combine(
-            AppContext.BaseDirectory, "Assets", "Models", descriptor.FileName);
-        return new U2NetBackgroundRemover(descriptor, path, preferGpu);
-    }
-
     public Task WarmupAsync(CancellationToken cancellationToken = default)
         => Task.Run(() => _sessions.Warmup(), cancellationToken);
 

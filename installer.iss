@@ -43,8 +43,11 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#SourceDir}\{#MyAppExe}";         DestDir: "{app}"; Flags: ignoreversion
-; Background-removal model. Kept a loose file (not bundled into the single-file
-; exe) so AppContext.BaseDirectory resolution finds it at Assets\Models.
+; Background-removal model. Only the ~5 MB lite model ships; the heavier
+; group-photo / hair models are an in-app on-demand download (ModelDownloader)
+; into this same folder, where EnsureRemover() auto-selects the best one present.
+; Kept a loose file (not bundled into the single-file exe) so
+; AppContext.BaseDirectory resolution finds it at Assets\Models.
 #if FileExists(SourceDir + "\Assets\Models\u2netp.onnx")
 Source: "{#SourceDir}\Assets\Models\u2netp.onnx"; DestDir: "{app}\Assets\Models"; Flags: ignoreversion
 #endif

@@ -1111,6 +1111,17 @@
                                 <TextBlock x:Name="RemoveBgStatus" Text="" Foreground="#55556A" FontSize="11"
                                            TextWrapping="Wrap" Margin="0,0,0,2"/>
 
+                                <!-- One-time optional model download. Only the ~5 MB lite model ships in
+                                     the installer; this fetches the larger group-photo model on demand. -->
+                                <TextBlock x:Name="BgUpgradeLink" Visibility="Collapsed" Margin="0,2,0,0"
+                                           FontSize="11" TextWrapping="Wrap">
+                                    <Hyperlink x:Name="BgUpgradeHyperlink" Click="BgUpgrade_Click"
+                                               Foreground="#0A84FF" TextDecorations="None"
+                                               ToolTip="Downloads a 176 MB model that masks everyone in a group photo. One time, then it is used automatically.">
+                                        <Run x:Name="BgUpgradeText" Text="Better results for group photos — download model (176 MB)"/>
+                                    </Hyperlink>
+                                </TextBlock>
+
                                 <!-- Edge presets — shown after a removal so it can be re-run tighter/softer -->
                                 <Border x:Name="RemoveBgRefinePanel" Visibility="Collapsed" Margin="0,6,0,0">
                                     <StackPanel>

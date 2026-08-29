@@ -2,7 +2,27 @@
 
 ---
 
-## v1.4 — 2026-08-19
+## Unreleased
+
+### Remove Background
+
+- **Automatic model selection.** Background removal now loads the best segmentation
+  model present next to the app instead of always using U²-Net Lite. Preference order
+  is IS-Net → U²-Net Human → U²-Net Full → U²-Net Lite (`BgModelPreference` in
+  `BackgroundRemoval.cs`).
+- **New U²-Net Human model** (`u2net_human_seg.onnx`) — trained on human segmentation,
+  so it masks *every* person in a group photo rather than keeping only the most
+  prominent one. Apache-2.0.
+- **One-time in-app model download.** A "Better results for group photos" link under
+  the Remove Background button fetches the 176 MB human-segmentation model on demand,
+  with progress, and switches to it immediately. The installer stays ~5 MB — the
+  heavier weights are only downloaded by users who want them.
+- The "model not installed" message no longer names `u2netp.onnx` specifically, since
+  any supported model now satisfies the requirement.
+
+---
+
+## v1.4 — 2026-08-22
 
 ### Remove Background ✂️
 
@@ -29,7 +49,7 @@
 
 ---
 
-## v1.3 — 2026-06-10
+## v1.3 — 2026-06-14
 
 ### Collage
 

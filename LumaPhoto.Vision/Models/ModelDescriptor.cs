@@ -45,6 +45,23 @@ public sealed record ModelDescriptor
         WeightsLicense = "Apache-2.0",
     };
 
+    /// <summary>
+    /// U²-Net trained on human segmentation. Optional download; the one to use
+    /// for portraits and GROUP photos — the general models are salient-object
+    /// detectors and tend to keep only the most prominent person, while this one
+    /// was trained to mask every person in frame.
+    /// </summary>
+    public static readonly ModelDescriptor U2NetHumanSeg = new()
+    {
+        Name = "U²-Net Human",
+        FileName = "u2net_human_seg.onnx",
+        InputSize = 320,
+        Mean = [0.485f, 0.456f, 0.406f],
+        Std = [0.229f, 0.224f, 0.225f],
+        ApproxSizeMb = 176,
+        WeightsLicense = "Apache-2.0",
+    };
+
     /// <summary>Full U²-Net. Optional download; markedly better on hair and fur.</summary>
     public static readonly ModelDescriptor U2Net = new()
     {

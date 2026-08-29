@@ -1,9 +1,11 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using LumaPhoto.Interop;
 using LumaPhoto.Vision;
 using LumaPhoto.Vision.Imaging;
+using LumaPhoto.Vision.Models;
 using LumaPhoto.Vision.Pipeline;
 
 namespace LumaPhoto;
@@ -22,16 +24,31 @@ public partial class MainWindow
     private byte[]? _bgBeforePixels;
     private int _bgBeforeW, _bgBeforeH;
 
+    // Best model first. The general U²-Net variants are salient-object detectors
+    // and tend to keep only the most prominent person in a group photo; the
+    // human-seg variant masks everyone in frame. The installer includes u2netp;
+    // optional models are discovered automatically from Assets\Models.
+    private static readonly ModelDescriptor[] BgModelPreference =
+    {
+        ModelDescriptor.IsNet,          // best overall quality, if user installed it
+        ModelDescriptor.U2NetHumanSeg,  // best for people / group photos
+        ModelDescriptor.U2Net,          // full general model
+        ModelDescriptor.U2NetP,         // bundled default (lite)
+    };
+
     /// <summary>
-    /// Creates the remover on first use and warms the ONNX session in the
-    /// background. Returns null when the model file is absent.
+    /// Creates the remover on first use, choosing the best model file present in
+    /// Assets\Models, and warms the ONNX session in the background.
+    /// Returns null when no model file is found.
     /// </summary>
     private IBackgroundRemover? EnsureRemover()
     {
         if (_bgRemover != null || _bgRemoverUnavailable) return _bgRemover;
         try
         {
-            _bgRemover = U2NetBackgroundRemover.FromAppFolder();
+            var descriptor = BgModelPreference.FirstOrDefault(ModelDownloader.IsInstalled)
+                          ?? ModelDescriptor.U2NetP;
+            _bgRemover = new U2NetBackgroundRemover(descriptor, ModelDownloader.PathFor(descriptor));
             _ = _bgRemover.WarmupAsync();
         }
         catch (Exception)
@@ -71,8 +88,8 @@ public partial class MainWindow
         {
             RemoveBgStatus.Text = "Model not installed.";
             ShowToast("Background Removal Unavailable",
-                "u2netp.onnx was not found next to the app. Reinstall LumaPhoto, or place the model " +
-                "in an Assets\\Models folder beside LumaPhoto.exe.", success: false);
+                "No background-removal model was found next to the app. Reinstall LumaPhoto, or place " +
+                "a supported .onnx model in an Assets\\Models folder beside LumaPhoto.exe.", success: false);
             return;
         }
 
@@ -149,5 +166,87 @@ public partial class MainWindow
         BgEdgeBalanced.IsChecked = true;
         BgEdgeSoft.IsChecked = false;
         BgEdgeHard.IsChecked = false;
+        RefreshBgUpgradeLink();
+    }
+
+    // ── Optional model download ───────────────────────────────────────────────
+
+    private CancellationTokenSource? _bgModelCts;
+
+    /// <summary>
+    /// The model the upgrade link offers. Human-seg is trained for person
+    /// segmentation rather than salient-object detection, which is what makes it the
+    /// right pick for group shots; measured on single subjects it tracks the full
+    /// general model closely, so it is a safe default for non-people photos too.
+    /// </summary>
+    private static ModelDescriptor BgUpgradeModel => ModelDescriptor.U2NetHumanSeg;
+
+    /// <summary>
+    /// Shows the download link only while the upgrade is actually missing, so the
+    /// panel is clean once the better model is in place.
+    /// </summary>
+    private void RefreshBgUpgradeLink()
+    {
+        if (_bgModelCts != null) return;   // a download is in flight — leave the text alone
+
+        bool missing = !ModelDownloader.IsInstalled(BgUpgradeModel);
+        BgUpgradeLink.Visibility = missing ? Visibility.Visible : Visibility.Collapsed;
+        if (missing)
+            BgUpgradeText.Text =
+                $"Better results for group photos — download model ({BgUpgradeModel.ApproxSizeMb} MB)";
+    }
+
+    private async void BgUpgrade_Click(object sender, RoutedEventArgs e)
+    {
+        // Second click while downloading cancels it — the progress text says so.
+        if (_bgModelCts != null)
+        {
+            _bgModelCts.Cancel();
+            return;
+        }
+
+        var model = BgUpgradeModel;
+        _bgModelCts = new CancellationTokenSource();
+
+        var progress = new Progress<int>(pct =>
+            BgUpgradeText.Text = $"Downloading {model.Name}… {pct}%  (click to cancel)");
+
+        DownloadResult result;
+        try
+        {
+            result = await ModelDownloader
+                .DownloadAsync(model, progress, _bgModelCts.Token)
+                .ConfigureAwait(true);   // resume on UI thread
+        }
+        finally
+        {
+            _bgModelCts.Dispose();
+            _bgModelCts = null;
+        }
+
+        switch (result)
+        {
+            case DownloadResult.Failed:
+                BgUpgradeText.Text = $"Download failed — retry ({model.ApproxSizeMb} MB)";
+                ShowToast("Model Download Failed",
+                    "Could not download the model. Check your connection and try again.",
+                    success: false);
+                return;
+
+            case DownloadResult.Cancelled:
+                RefreshBgUpgradeLink();
+                return;
+
+            default:
+                // Drop the live session so the next run picks up the better model.
+                _bgRemover?.Dispose();
+                _bgRemover = null;
+                _bgRemoverUnavailable = false;
+
+                RefreshBgUpgradeLink();
+                ShowToast("Model Installed",
+                    $"{model.Name} is ready. Background removal will use it from now on.");
+                return;
+        }
     }
 }

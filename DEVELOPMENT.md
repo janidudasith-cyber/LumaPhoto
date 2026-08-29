@@ -8,21 +8,27 @@ This file documents the build, architecture, training, and distribution conventi
 ```
 dotnet publish LumaPhoto\LumaPhoto.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
 ```
-Output: `publish\LumaPhoto.exe` + `publish\enhancer_params.onnx`.
+Output: `publish\LumaPhoto.exe`, plus the loose model files staged beside it
+(`Assets\Models\u2netp.onnx` and any `fivek_expert_*.onnx` / `enhancer_params.onnx`
+present in the project).
 
 **Debug run:**
 ```
 dotnet run --project LumaPhoto\LumaPhoto.csproj
 ```
 
-There are no automated tests.
+There are no automated tests in the repo.
 
 ## Installer
 
 `installer.iss` — Inno Setup script at the repo root. Open in Inno Setup Compiler and press F9 to build.
-Output: `installer_output\LumaPhoto-Setup-v1.0.exe` — a standard Windows installer (Program Files entry, Start Menu shortcut, uninstaller).
-Bundles `publish\LumaPhoto.exe` + `publish\enhancer_params.onnx`.
+Output: `installer_output\LumaPhoto-Setup-v{version}.exe` — a standard Windows installer (Program Files entry, Start Menu shortcut, uninstaller). Bump `MyAppVersion` in `installer.iss` and `AppVersion.Current` together.
+Bundles `publish\LumaPhoto.exe`, `Assets\Models\u2netp.onnx`, and whichever enhancer/FiveK models are present — each `[Files]` entry is guarded by `#if FileExists`, so a missing optional model is skipped rather than failing the compile.
 The `SetupIconFile` points to `LumaPhoto\LumaPhoto.ico` (not the exe — extracting from a 167 MB single-file exe causes a compile error).
+
+**Only the ~4.7 MB lite background-removal model ships.** The larger models are an
+in-app download (`ModelDownloader`); bundling them would have taken the installer from
+~5 MB to ~360 MB for a feature most users never open.
 
 ## Training Pipeline (Python)
 
@@ -49,8 +55,14 @@ python training/train.py --fivek_root ./data/fivek --synthetic_dirs ./data/photo
 **File layout:**
 - `training/colab_notebook.py` — primary self-contained Colab notebook (use this)
 - `training/kaggle_notebook.py` — Kaggle variant (kept for reference)
-- `training/training/` — modular training code (dataset.py, model.py, losses.py, pipeline.py, train.py)
-- `training/` root files — older versions kept for reference
+- `training/*.py` — the modular training code (dataset.py, model.py, losses.py, pipeline.py, train.py). **These are the current versions.**
+
+A nested `training/training/` once held an older May-2026 snapshot of the same
+modules and was removed on 2026-08-29 — it predated `ImageStatsEncoder` in `model.py`
+and was a standing trap for editing the wrong copy. Recover from git history if
+needed: it is the only place `_gdrive_url` / `_gdrive_confirm_url` in
+`download_data.py` still exist, having been dropped when the datasets moved off
+Google Drive.
 
 ## Architecture
 
@@ -83,9 +95,28 @@ Local ONNX background removal, referenced by the WPF app via `ProjectReference`.
 - `IBackgroundRemover` — the only seam the UI touches (`ComputeMaskAsync` / `RemoveAsync` / `WarmupAsync`).
 - `ImageBuffer` — plain BGRA32, tightly packed. Same layout as `_sourcePixels`, so pixels cross the boundary without a bitmap copy.
 - `Pipeline/RemovalOptions` — edge-quality tunables (levels → shrink → feather). `Postprocessor` is `internal`, so changing options requires re-running inference; the UI exposes three presets rather than live sliders.
+- `Models/ModelDownloader` — on-demand fetch of the optional models, SHA-256 verified. Lives here rather than in the WPF project so a headless tool can prefetch too.
 - `Interop/BitmapInterop.cs` lives in **the WPF project**, not here. Moving it into the library would force `<UseWPF>` on the library and re-couple everything.
 
-Model: `Assets/Models/u2netp.onnx` (~4.4 MB, Apache-2.0). Excluded from the single-file bundle so `AppContext.BaseDirectory` resolution works, and bundled by `installer.iss` into `{app}\Assets\Models`. `.onnx` files are git-ignored — see `LumaPhoto.Vision/Assets/Models/README.md`.
+### Background-removal model selection
+
+`EnsureRemover()` in `BackgroundRemoval.cs` picks the best model **present on disk**,
+in `BgModelPreference` order: IS-Net → U²-Net Human → U²-Net Full → U²-Net Lite.
+Only the lite model ships; the human-seg model is downloaded in-app on demand and
+the other two can be dropped into `Assets\Models` by hand.
+
+Adding a model means adding a `ModelDescriptor` (input size and normalisation
+constants are per-model and getting them wrong yields a plausible-looking but subtly
+bad mask) and, if it should be downloadable, its SHA-256 to `ModelDownloader`.
+`.onnx` files are git-ignored — see `LumaPhoto.Vision/Assets/Models/README.md`.
+
+Models are excluded from the single-file bundle (`ExcludeFromSingleFile`) so
+`AppContext.BaseDirectory` resolution works, and land in `{app}\Assets\Models`.
+
+**Keep the big models out of `LumaPhoto.Vision/Assets/Models/` during development.**
+The csproj copies that folder into every build output, so two 176 MB models there
+means ~1.7 GB on disk and 5× slower Release builds. A gitignored `.models-cache/` at
+the repo root is the place to stash them; copy one in only when testing auto-select.
 
 ### Inspector tabs
 
@@ -154,6 +185,8 @@ ImageSharp was removed. The app is commercially safe with no paid license requir
 
 ### GitHub / distribution
 
-- Source code on GitHub (C#, Python, scripts) — `.gitignore` excludes `publish/`, `bin/`, `obj/`, `*.onnx`, `*.pt`, datasets
-- Installer distributed via GitHub Releases as a binary attachment (`LumaPhoto-Setup-v1.0.exe`)
+- Source code on GitHub (C#, Python, scripts) — `.gitignore` excludes `publish/`, `bin/`, `obj/`, `installer_output/`, `.models-cache/`, `*.onnx`, `*.pt`, datasets
+- Installer distributed via GitHub Releases as a binary attachment (`LumaPhoto-Setup-v{version}.exe`)
+- `UpdateChecker` reads the GitHub Releases API on startup and offers a silent in-place update; it needs the release to carry an `.exe` asset, otherwise it just opens the releases page
 - Trained model (`enhancer_params.onnx`) stored on Google Drive — download and place next to exe after training
+- Background-removal weights come from the `danielgatis/rembg` releases at runtime, not from this repo

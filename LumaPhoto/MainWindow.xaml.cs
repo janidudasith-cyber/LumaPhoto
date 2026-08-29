@@ -226,7 +226,7 @@ public partial class MainWindow : Window
         AppVersionLabel.Text = $"v{AppVersion.Current}";
 
         SourceInitialized += (_, _) => ApplyDarkTitleBar();
-        Loaded  += (_, _) => { UpdateLayout(); _ = CheckForUpdateAsync(); };
+        Loaded  += (_, _) => { UpdateLayout(); RefreshBgUpgradeLink(); _ = CheckForUpdateAsync(); };
         Closed  += (_, _) => { _neuralEnhancer?.Dispose(); _bgRemover?.Dispose(); };
         SizeChanged += (_, _) => { if (_cropping) ClampCropToImage(); RefreshCropOverlay(); RefreshDesignOverlay(); if (_splitViewOn) UpdateSplitView(); };
         this.Icon = CreateAppIcon();

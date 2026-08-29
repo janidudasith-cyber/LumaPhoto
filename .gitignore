@@ -13,11 +13,16 @@ __pycache__/
 venv/
 
 # Training data & checkpoints (too large for git)
-training/training/data/
-training/training/checkpoints/
-training/training/__pycache__/
+training/data/
+training/checkpoints*/
 *.pt
 *.onnx
+
+# Dev stash for the big optional models. Kept OUT of Assets\Models so the build
+# doesn't copy ~350 MB into every output folder — only u2netp.onnx ships, and
+# ModelDownloader fetches the rest at runtime. Copy one in from here to test
+# the auto-select path without re-downloading.
+.models-cache/
 
 # OS
 .DS_Store
@@ -27,6 +32,9 @@ Thumbs.db
 .vs/
 *.user
 *.suo
+
+# Claude Code — per-machine permissions, not shared
+.claude/settings.local.json
 
 # Personal / scratch artifacts (never publish)
 *.docx
