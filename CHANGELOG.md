@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+### Fixes
+
+- **Crash: closing the app or finishing a model download during Remove Background
+  or Auto Enhance could kill the process outright.** Disposing an ONNX session while
+  it was still running inference freed native memory the call was reading, which
+  surfaces as an uncatchable `AccessViolationException` rather than a normal error.
+  `U2NetBackgroundRemover` and `NeuralEnhancer` now wait for any in-flight inference
+  to finish before disposing their sessions.
+
 ### Remove Background
 
 - **Automatic model selection.** Background removal now loads the best segmentation

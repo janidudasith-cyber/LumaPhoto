@@ -117,6 +117,16 @@ public sealed class NeuralEnhancer : IDisposable
     // Number of parameters the trained model outputs
     private const int NumParams = 15;
 
+    // Serialises inference against Dispose. Auto Enhance runs PredictParams on a
+    // background thread while the window can be closing, and disposing an
+    // InferenceSession mid-Run() frees native memory the call is still reading —
+    // an AccessViolationException, which .NET cannot catch, so it takes the whole
+    // process down. Not disposed: SemaphoreSlim only needs it once
+    // AvailableWaitHandle has been used, and disposing it would just move the
+    // failure into Wait().
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private bool _disposed;
+
     // Directory where the app searched for model files (exposed for diagnostics)
     internal string SearchDir  { get; private set; } = "";
     internal string LoadError  { get; private set; } = "";
@@ -261,9 +271,14 @@ public sealed class NeuralEnhancer : IDisposable
 
     public AdjustmentState? PredictParams(byte[] bgra, int width, int height, string? expert)
     {
-        if (!TryGetParamSession(expert, out var session, out var inputName)) return null;
+        if (_disposed) return null;
+
+        _gate.Wait();
         try
         {
+            if (_disposed) return null;
+            if (!TryGetParamSession(expert, out var session, out var inputName)) return null;
+
             // Full-image prediction
             var p0 = RunParamInference(session, inputName, PreprocessRegion(bgra, width, height, 0, 0, width, height));
             if (p0 == null) return null;
@@ -297,6 +312,7 @@ public sealed class NeuralEnhancer : IDisposable
             };
         }
         catch { return null; }
+        finally { _gate.Release(); }
     }
 
     private bool TryGetParamSession(string? expert, out InferenceSession session, out string inputName)
@@ -338,9 +354,13 @@ public sealed class NeuralEnhancer : IDisposable
     /// </summary>
     public SceneWeights? Analyze(byte[] bgra, int width, int height)
     {
-        if (_sceneSession == null || _labels == null) return null;
+        if (_disposed || _sceneSession == null || _labels == null) return null;
+
+        _gate.Wait();
         try
         {
+            if (_disposed) return null;
+
             var tensor = PreprocessRegion(bgra, width, height, 0, 0, width, height);
             var inputs = new[] { NamedOnnxValue.CreateFromTensor(_sceneInputName!, tensor) };
             using var results = _sceneSession!.Run(inputs);
@@ -348,6 +368,7 @@ public sealed class NeuralEnhancer : IDisposable
             return BuildWeights(probs);
         }
         catch { return null; }
+        finally { _gate.Release(); }
     }
 
     // ── Shared preprocessing ──────────────────────────────────────────────────
@@ -490,10 +511,22 @@ public sealed class NeuralEnhancer : IDisposable
 
     public void Dispose()
     {
-        _paramSession?.Dispose();
-        foreach (var entry in _expertParamSessions.Values)
-            entry.session.Dispose();
-        _sceneSession?.Dispose();
+        if (_disposed) return;
+        _disposed = true;
+
+        // Block until any in-flight PredictParams / Analyze has finished — see
+        // the note on _gate. Auto Enhance is the overlapping caller: it runs the
+        // three expert models on a background thread, so closing the window
+        // mid-enhance lands here while Run() is still inside native code.
+        _gate.Wait();
+        try
+        {
+            _paramSession?.Dispose();
+            foreach (var entry in _expertParamSessions.Values)
+                entry.session.Dispose();
+            _sceneSession?.Dispose();
+        }
+        finally { _gate.Release(); }
     }
 
     // ── Places365 category → (SceneType, boost) mapping ──────────────────────

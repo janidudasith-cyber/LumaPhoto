@@ -26,7 +26,21 @@ public sealed class U2NetBackgroundRemover : IBackgroundRemover
         => _sessions = new OnnxSessionManager(descriptor, modelPath, preferGpu);
 
     public Task WarmupAsync(CancellationToken cancellationToken = default)
-        => Task.Run(() => _sessions.Warmup(), cancellationToken);
+        => Task.Run(async () =>
+        {
+            // Through the same gate as inference: warm-up is what actually builds
+            // the session, so racing Dispose here would leave a freshly created
+            // session with nothing left to dispose it.
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (!_disposed) _sessions.Warmup();
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }, cancellationToken);
 
     public async Task<MaskBuffer> ComputeMaskAsync(
         ImageBuffer source,
@@ -92,7 +106,20 @@ public sealed class U2NetBackgroundRemover : IBackgroundRemover
     {
         if (_disposed) return;
         _disposed = true;
-        _gate.Dispose();
-        _sessions.Dispose();
+
+        // Wait for any in-flight inference before tearing the session down.
+        // Disposing an InferenceSession while Run() is executing frees native
+        // memory that call is still reading: an AccessViolationException, which
+        // .NET cannot catch, so it kills the process instead of surfacing as a
+        // failed removal. The window-close handler and the post-download model
+        // swap both dispose from the UI thread while a removal may be running.
+        _gate.Wait();
+        try { _sessions.Dispose(); }
+        finally { _gate.Release(); }
+
+        // _gate is deliberately not disposed. SemaphoreSlim only needs disposal
+        // once AvailableWaitHandle has been touched, and disposing it here would
+        // turn a late ComputeMaskAsync into an ObjectDisposedException thrown
+        // from Wait itself rather than from the guard above.
     }
 }
