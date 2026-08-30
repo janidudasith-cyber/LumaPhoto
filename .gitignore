@@ -3,6 +3,7 @@ bin/
 obj/
 publish/
 publish_*/
+publish-*/
 installer_output/
 
 # Python
