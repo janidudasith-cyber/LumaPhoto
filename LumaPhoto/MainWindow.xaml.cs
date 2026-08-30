@@ -226,7 +226,17 @@ public partial class MainWindow : Window
         AppVersionLabel.Text = $"v{AppVersion.Current}";
 
         SourceInitialized += (_, _) => ApplyDarkTitleBar();
-        Loaded  += (_, _) => { UpdateLayout(); RefreshBgUpgradeLink(); _ = CheckForUpdateAsync(); };
+        Loaded  += (_, _) =>
+        {
+            UpdateLayout();
+            RefreshBgUpgradeLink();
+#if !STORE_BUILD
+            // Store builds are installed and updated only through the Store
+            // (Microsoft Store Policy 10.2.5) — this whole in-app updater is
+            // compiled out below, not just left unreachable.
+            _ = CheckForUpdateAsync();
+#endif
+        };
         Closed  += (_, _) => { _neuralEnhancer?.Dispose(); _bgRemover?.Dispose(); };
         SizeChanged += (_, _) => { if (_cropping) ClampCropToImage(); RefreshCropOverlay(); RefreshDesignOverlay(); if (_splitViewOn) UpdateSplitView(); };
         this.Icon = CreateAppIcon();
@@ -4093,6 +4103,11 @@ public partial class MainWindow : Window
     }
 
     // ── In-app update ──────────────────────────────────────────────────────────
+    // Compiled out entirely for STORE_BUILD: a Store package must be installed
+    // and updated only through the Store (Microsoft Store Policy 10.2.5), and
+    // this download-and-silently-launch-an-installer flow is exactly what that
+    // policy forbids. The GitHub-distributed build keeps it.
+#if !STORE_BUILD
 
     private CancellationTokenSource? _updateCts;
 
@@ -4169,5 +4184,7 @@ public partial class MainWindow : Window
         });
         Application.Current.Shutdown();
     }
+
+#endif
 
 }

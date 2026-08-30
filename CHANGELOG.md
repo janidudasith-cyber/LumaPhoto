@@ -13,6 +13,16 @@
   `U2NetBackgroundRemover` and `NeuralEnhancer` now wait for any in-flight inference
   to finish before disposing their sessions.
 
+### Store build
+
+- **New `-p:StoreBuild=true` publish variant** for selling the app (Microsoft Store
+  or otherwise). It omits the `fivek_expert_*.onnx` models — trained in part on
+  PPR10K, which licenses non-commercial use only, including of derived weights —
+  and compiles out the self-updater, which downloads and silently launches an
+  installer, something Microsoft Store Policy 10.2.5 doesn't allow for a packaged
+  app. Auto Enhance falls back to the rule-based path when the FiveK models are
+  absent; everything else is unchanged. See `DEVELOPMENT.md` → "Store build."
+
 ### Remove Background
 
 - **Automatic model selection.** Background removal now loads the best segmentation

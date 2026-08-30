@@ -19,6 +19,35 @@ dotnet run --project LumaPhoto\LumaPhoto.csproj
 
 There are no automated tests in the repo.
 
+### Store build
+
+`-p:StoreBuild=true` produces the variant meant for sale (Microsoft Store or
+any other paid channel):
+```
+dotnet publish LumaPhoto\LumaPhoto.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:StoreBuild=true -o publish-store
+```
+Two things differ from the normal build, both compiled out rather than merely
+disabled at runtime — confirmed by checking the published binary for the
+relevant symbols, not just by reading the source:
+
+- **No `fivek_expert_*.onnx`.** `PPR10K` — the primary dataset behind those
+  models (see `fivek_expert_*.json`) — licenses non-commercial use only and
+  explicitly extends that to "derived data," i.e. weights trained on it.
+  `NeuralEnhancer` degrades to the rule-based `ComputeAutoParams` when these
+  files are absent, so Auto Enhance still works — just without the neural
+  blend. `MIT-Adobe FiveK`'s own terms haven't been independently verified
+  either; treat both as unresolved until someone reads the actual license
+  files at their source and clears them.
+- **No self-updater.** `UpdateChecker.cs` is excluded from compilation
+  (`<Compile Remove>` in the csproj) and its two call sites in
+  `MainWindow.xaml.cs` are wrapped in `#if !STORE_BUILD`. Microsoft Store
+  Policy 10.2.5 requires a packaged app be installed and updated only through
+  the Store; the GitHub-release-polling, silent-installer-launching flow this
+  app otherwise ships with is exactly what that forbids.
+
+Everything else — background removal (Apache-2.0 U²-Net weights), filters,
+collage, markup, EXIF display — is identical between builds.
+
 ## Installer
 
 `installer.iss` — Inno Setup script at the repo root. Open in Inno Setup Compiler and press F9 to build.

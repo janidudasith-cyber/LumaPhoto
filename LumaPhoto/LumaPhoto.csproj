@@ -19,7 +19,27 @@
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
+    <!-- StoreBuild=true produces the sellable variant: no FiveK/PPR10K-trained
+         enhancer models (PPR10K's license bars commercial use of "derived
+         data", i.e. weights trained on it — see LumaPhoto/fivek_expert_*.json,
+         which name the training profile), and no self-updater (Microsoft Store
+         Policy 10.2.5 requires packaged apps be installed/updated only through
+         the Store). Everything else is identical — Auto Enhance falls back to
+         the rule-based ComputeAutoParams, which needs no trained weights at all.
+         Build with: dotnet publish -p:StoreBuild=true -->
+    <StoreBuild Condition="'$(StoreBuild)' == ''">false</StoreBuild>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(StoreBuild)' == 'true'">
+    <DefineConstants>$(DefineConstants);STORE_BUILD</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(StoreBuild)' == 'true'">
+    <!-- The self-updater's only two call sites (MainWindow.xaml.cs) are #if'd
+         out under STORE_BUILD; drop the class itself too so a Store review
+         decompile finds no GitHub-API or silent-installer-launch code at all,
+         rather than an unreferenced one. -->
+    <Compile Remove="UpdateChecker.cs" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.19.2" />
   </ItemGroup>
@@ -30,27 +50,30 @@
   </ItemGroup>
   <!-- Places365 model + labels: copy next to exe when present; excluded from single-file bundle -->
   <ItemGroup>
-    <Content Condition="Exists('fivek_expert_c.onnx')" Include="fivek_expert_c.onnx">
+    <!-- FiveK expert models: excluded outright from a StoreBuild, regardless of
+         whether the .onnx files happen to sit in this folder locally. See the
+         StoreBuild comment above. -->
+    <Content Condition="Exists('fivek_expert_c.onnx') And '$(StoreBuild)' != 'true'" Include="fivek_expert_c.onnx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
-    <Content Condition="Exists('fivek_expert_c.json')" Include="fivek_expert_c.json">
+    <Content Condition="Exists('fivek_expert_c.json') And '$(StoreBuild)' != 'true'" Include="fivek_expert_c.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
-    <Content Condition="Exists('fivek_expert_a.onnx')" Include="fivek_expert_a.onnx">
+    <Content Condition="Exists('fivek_expert_a.onnx') And '$(StoreBuild)' != 'true'" Include="fivek_expert_a.onnx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
-    <Content Condition="Exists('fivek_expert_a.json')" Include="fivek_expert_a.json">
+    <Content Condition="Exists('fivek_expert_a.json') And '$(StoreBuild)' != 'true'" Include="fivek_expert_a.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
-    <Content Condition="Exists('fivek_expert_e.onnx')" Include="fivek_expert_e.onnx">
+    <Content Condition="Exists('fivek_expert_e.onnx') And '$(StoreBuild)' != 'true'" Include="fivek_expert_e.onnx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
-    <Content Condition="Exists('fivek_expert_e.json')" Include="fivek_expert_e.json">
+    <Content Condition="Exists('fivek_expert_e.json') And '$(StoreBuild)' != 'true'" Include="fivek_expert_e.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
     </Content>
