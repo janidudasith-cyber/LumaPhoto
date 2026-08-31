@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX manifest for LumaPhoto's Store build (LumaPhoto/LumaPhoto.csproj,
+  -p:StoreBuild=true). See DEVELOPMENT.md -> "Store build" and "MSIX packaging".
+
+  *** REPLACE BEFORE SUBMITTING ***
+  The Identity/Name and Identity/Publisher values below are PLACEHOLDERS. Real
+  ones come from Partner Center once you reserve the app name:
+    Partner Center -> App management -> App identity, after "Create a new app".
+  Partner Center shows you the exact Name and Publisher strings to paste in —
+  copy them verbatim; a mismatch fails ingestion.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <Identity
+    Name="PLACEHOLDER.LumaPhoto"
+    Publisher="CN=00000000-0000-0000-0000-000000000000"
+    Version="1.4.0.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>LumaPhoto</DisplayName>
+    <PublisherDisplayName>Janidu Hewamanna</PublisherDisplayName>
+    <Logo>Assets\Square150x150Logo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22000.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="LumaPhoto" Executable="LumaPhoto.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="LumaPhoto"
+        Description="A native Windows photo editor. Everything runs locally — no account, no upload, no per-image cost."
+        BackgroundColor="#0D0D0F"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png">
+          <uap:ShowNameOnTiles>
+            <uap:ShowOn Tile="square150x150Logo" />
+            <uap:ShowOn Tile="wide310x150Logo" />
+          </uap:ShowNameOnTiles>
+        </uap:DefaultTile>
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#0D0D0F" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <!-- Model download (Remove Background upgrade link) and the free build's
+         update check both need outbound HTTPS. Harmless to keep declared even
+         though StoreBuild removes the update-checker — background-removal
+         model downloads still use it. -->
+    <Capability Name="internetClient" />
+  </Capabilities>
+
+</Package>

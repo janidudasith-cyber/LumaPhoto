@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Not an app — this project exists purely so `dotnet restore` fetches
+    makeappx.exe / signtool.exe / makepri.exe into the local NuGet cache
+    (~/.nuget/packages/microsoft.windows.sdk.buildtools/<version>/bin/<version>/x64/).
+    pack-msix.bat depends on that cache entry existing. Avoids requiring the
+    full Windows SDK or Visual Studio's packaging workload just to build an
+    MSIX from the command line.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4188" />
+  </ItemGroup>
+</Project>

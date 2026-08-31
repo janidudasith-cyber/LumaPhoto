@@ -6,6 +6,12 @@ publish_*/
 publish-*/
 installer_output/
 
+# MSIX packaging (see DEVELOPMENT.md -> "MSIX packaging"). Package/AppxManifest.xml
+# and Package/Assets/*.png are hand-authored source and stay tracked; the payload
+# copied in by pack-msix.bat and the packed .msix itself are build output.
+Package/LumaPhoto.exe
+LumaPhoto.msix
+
 # Python
 __pycache__/
 *.py[cod]

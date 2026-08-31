@@ -48,6 +48,51 @@ relevant symbols, not just by reading the source:
 Everything else — background removal (Apache-2.0 U²-Net weights), filters,
 collage, markup, EXIF display — is identical between builds.
 
+### MSIX packaging
+
+`pack-msix.bat` — double-click it, or from the repo root:
+```
+pack-msix.bat
+```
+Publishes the Store build, stages `LumaPhoto.exe` and `Assets\Models\u2netp.onnx`
+into `Package\`, and packs `LumaPhoto.msix` with `makeappx.exe`. That tool isn't
+part of the .NET SDK — the script fetches it itself on first run via the
+`Microsoft.Windows.SDK.BuildTools` NuGet package (referenced by
+`tools\MsixTools\MsixTools.csproj`, which exists only to trigger that restore),
+so no Visual Studio packaging workload or standalone Windows SDK install is
+needed.
+
+**`Package\AppxManifest.xml` and `Package\Assets\*.png` are checked in** —
+they're small, hand-authored/generated source, not build output.
+`Package\LumaPhoto.exe`, `Package\Assets\Models\*.onnx`, and the top-level
+`LumaPhoto.msix` are gitignored; `pack-msix.bat` regenerates all three every
+run. The PNGs came from a one-off script that re-renders `MainWindow.xaml.cs`'s
+`CreateAppIcon()` mark (same gradient-square-"L", same visual identity) at each
+required MSIX size — not committed, since the outputs are what matter and are
+static once generated. Regenerate them by hand only if the app icon changes.
+
+**Before submitting:** `Identity/Name` and `Identity/Publisher` in
+`AppxManifest.xml` are placeholders. Reserve the app name in Partner Center
+first (App management → New product → App identity), then paste in the exact
+values it gives you — a mismatch fails ingestion — and rerun `pack-msix.bat`.
+
+**No self-signing needed for the Store.** Microsoft re-signs the package on
+ingestion; submit `LumaPhoto.msix` as-is.
+
+**To sideload-test locally before submitting** (optional, and none of this
+is scripted here — it changes machine trust settings, so do it yourself
+rather than via a script):
+1. Generate a test certificate and sign the package:
+   ```
+   New-SelfSignedCertificate -Type Custom -Subject "CN=00000000-0000-0000-0000-000000000000" -KeyUsage DigitalSignature -FriendlyName "LumaPhoto test cert" -CertStoreLocation "Cert:\CurrentUser\My" -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3","2.5.29.19={text}")
+   & signtool.exe sign /fd SHA256 /a /f <exported .pfx> LumaPhoto.msix
+   ```
+   (`signtool.exe` sits next to `makeappx.exe` in the same NuGet cache path
+   the script prints.) The cert's `Subject` must match manifest `Identity/Publisher`.
+2. Either enable **Settings → Privacy & security → For developers → Developer
+   Mode**, or import the cert into **Local Machine → Trusted People**.
+3. `Add-AppxPackage -Path LumaPhoto.msix`.
+
 ## Installer
 
 `installer.iss` — Inno Setup script at the repo root. Open in Inno Setup Compiler and press F9 to build.

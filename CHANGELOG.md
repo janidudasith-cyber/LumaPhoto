@@ -22,6 +22,11 @@
   installer, something Microsoft Store Policy 10.2.5 doesn't allow for a packaged
   app. Auto Enhance falls back to the rule-based path when the FiveK models are
   absent; everything else is unchanged. See `DEVELOPMENT.md` → "Store build."
+- **`pack-msix.bat`** packages the Store build as an MSIX (`LumaPhoto.msix`), ready
+  for Partner Center once the placeholder `Identity` in `Package\AppxManifest.xml`
+  is replaced with a reserved app name. Fetches `makeappx.exe` itself via NuGet —
+  no Visual Studio packaging workload or Windows SDK install required. See
+  `DEVELOPMENT.md` → "MSIX packaging."
 
 ### Remove Background
 
