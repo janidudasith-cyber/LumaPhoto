@@ -1,6 +1,8 @@
 # Luma Photo Editor — STATUS
 
-_Snapshot taken 2026-08-29._
+_Snapshot taken 2026-08-29. Superseded — the work described below was committed
+and pushed on 2026-09-16 and now forms part of the unreleased v1.5. Kept as a
+record of the audit; see `CHANGELOG.md` and `DEVELOPMENT.md` for current state._
 
 ## What this is
 
@@ -13,14 +15,15 @@ installer and updated in place by `UpdateChecker` off GitHub Releases.
 See `README.md` for features, `DEVELOPMENT.md` for architecture, `CHANGELOG.md` for
 release history.
 
-## Working tree: one uncommitted change set ⚠️
+## Working tree at the time of the snapshot
 
 Branch `main`, up to date with `origin/main`
 (github.com/janidudasith-cyber/LumaPhoto). Last commit `b1ec942 v1.4 — local
 background removal` (2026-08-25), tagged `v1.4`; released to users 2026-08-22.
 
-Everything below is **uncommitted**. Release build is clean (0 warnings) and the
-download path is covered by a passing test harness.
+Everything below was **uncommitted at the time**; it has since landed on `main`.
+Release build was clean (0 warnings) and the download path was covered by a
+passing test harness.
 
 ### Feature — on-demand background-removal models
 
@@ -98,7 +101,8 @@ Deliberately kept:
 
 ## What needs attention
 
-1. **Commit.** Nothing here is committed yet. Nothing has been pushed.
+1. ~~**Commit.** Nothing here is committed yet. Nothing has been pushed.~~ Done —
+   committed and pushed 2026-09-16.
 
 2. **The UI download link has not been clicked by a human.** The downloader itself is
    thoroughly tested, but the WPF wiring — link visibility, progress text, cancel on

@@ -67,8 +67,10 @@
 - **Three edge styles** — *Balanced* for everyday shots, *Hair* for soft subjects like
   hair, fur, and sheer fabric, and *Product* for crisp-edged items like packaging and
   logos. Switching styles re-cuts from the original, so presets never compound.
-- Uses your GPU via DirectML when available, falling back to CPU automatically —
-  the active model and provider are shown under the button.
+- The active model and execution provider are shown under the button. (Correction:
+  this release was announced as using the GPU via DirectML. It does not — the
+  DirectML package reference is commented out, so inference has always fallen back
+  to CPU.)
 
 > **Tip:** export as **PNG** to keep the transparency. JPEG has no alpha channel and
 > will flatten the cut-out onto a solid background.

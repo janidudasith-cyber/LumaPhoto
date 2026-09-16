@@ -50,8 +50,8 @@ The inspector has six tabs: **Adjust · Filters · Crop · Markup · Design · L
 
 - **Remove Background** — one-click subject cut-out, running locally via ONNX.
   Three edge styles (Balanced / Hair / Product); switching styles re-cuts from the
-  original so presets never compound. Uses your GPU via DirectML when available.
-  A larger, more accurate model can be downloaded from inside the app — see
+  original so presets never compound. A larger, more accurate model can be
+  downloaded from inside the app — see
   [Background-removal models](#background-removal-models).
 - **Collage** — split, stack, grid, and feature layouts, with drag-to-reposition
   inside each slot.
@@ -85,7 +85,9 @@ are salient-object detectors that tend to keep only the most prominent person, w
 the human-segmentation model masks everyone in frame.
 
 The best model present is selected automatically at launch, and the active model and
-execution provider are shown under the button. Advanced users can drop other
+execution provider are shown under the button. Shipped builds run inference on the
+CPU: the DirectML GPU path exists in `OnnxSessionManager` but its package reference
+is commented out in `LumaPhoto.Vision.csproj`, so it falls back to CPU every time. Advanced users can drop other
 supported `.onnx` files into `%LOCALAPPDATA%\LumaPhoto\Models` — see
 [`LumaPhoto.Vision/Assets/Models/README.md`](LumaPhoto.Vision/Assets/Models/README.md).
 
