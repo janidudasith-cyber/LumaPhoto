@@ -11,14 +11,17 @@ are too large for git. Download and drop them in this folder.
 | `isnet-general-use.onnx` | ~173 MB | `ModelDescriptor.IsNet` | manual drop-in | ⚠️ VERIFY BEFORE COMMERCIAL USE |
 
 Only the lite model ships in the installer. The human-seg model is fetched on demand
-by `ModelDownloader` (see the link under the Remove Background button) into this same
-folder next to the exe; the other two can be dropped in by hand. Keeping the installer
-at ~5 MB matters more than shipping weights most users never touch.
+by `ModelDownloader` (see the link under the Remove Background button) into the
+current user's `%LOCALAPPDATA%\LumaPhoto\Models` folder. This keeps downloads writable
+when LumaPhoto is installed in Program Files or as an MSIX package. The other models
+can be dropped into that same user-model folder by hand. Keeping the installer at
+~5 MB matters more than shipping weights most users never touch.
 
 The app picks the **best model present automatically** (IS-Net → Human → Full → Lite;
-see `BgModelPreference` in `BackgroundRemoval.cs`) — drop a better `.onnx` in this
-folder next to the installed exe and the next launch uses it. The active model is
-shown under the Remove Background button.
+see `BgModelPreference` in `BackgroundRemoval.cs`) — drop a better `.onnx` in
+`%LOCALAPPDATA%\LumaPhoto\Models` and the next launch uses it. Bundled models beside
+the executable remain a read-only fallback. The active model is shown under the
+Remove Background button.
 
 Verified 2026-08-29: `u2netp`, `u2net_human_seg`, and `u2net` all export input
 `input.1` at `[1,3,320,320]` with the fused prediction as the first output, so they

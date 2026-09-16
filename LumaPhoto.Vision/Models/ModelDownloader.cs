@@ -15,13 +15,15 @@ public enum DownloadResult
 }
 
 /// <summary>
-/// Fetches the optional background-removal models on demand into the app's
-/// <c>Assets\Models</c> folder. The installer only ships the ~4.7 MB lite model;
-/// the ~176 MB group-photo and hair models are downloaded the first time a user
-/// asks for better quality. Once a file lands, <c>EnsureRemover()</c> auto-selects it.
+/// Fetches optional background-removal models into the current user's app-data
+/// folder. The installer only ships the ~4.7 MB lite model beside the app; the
+/// ~176 MB group-photo and hair models are downloaded on demand. Keeping mutable
+/// downloads out of the install directory makes this work for Program Files and
+/// MSIX installations, whose package files are read-only.
 ///
-/// Weights are the U²-Net ONNX exports published by the <c>danielgatis/rembg</c>
-/// project (Apache-2.0).
+/// Download sources are the U²-Net ONNX exports published by the
+/// <c>danielgatis/rembg</c> project. Their provenance and applicable notices are
+/// recorded in the distribution's THIRD_PARTY_NOTICES.txt file.
 ///
 /// Lives here rather than in the WPF project so the headless batch tool can prefetch
 /// models too — this assembly stays UI-framework agnostic.
@@ -52,28 +54,50 @@ public static class ModelDownloader
             ["u2net.onnx"]           = "8d10d2f3bb75ae3b6d527c77944fc5e7dcd94b29809d47a739a7a728a912b491",
         };
 
-    /// <summary>Models that are safe to redistribute and worth offering as a download.</summary>
+    /// <summary>Optional models offered by the application as on-demand downloads.</summary>
     public static readonly IReadOnlyList<ModelDescriptor> Optional =
     [
         ModelDescriptor.U2NetHumanSeg,
         ModelDescriptor.U2Net,
     ];
 
-    /// <summary>The folder models are resolved from — next to the running exe.</summary>
-    public static string ModelsDirectory =>
+    /// <summary>The read-only model folder shipped with the application.</summary>
+    public static string BundledModelsDirectory =>
         Path.Combine(AppContext.BaseDirectory, "Assets", "Models");
 
-    /// <summary>Absolute path where <paramref name="model"/> is expected on disk.</summary>
-    public static string PathFor(ModelDescriptor model)
-        => Path.Combine(ModelsDirectory, model.FileName);
+    /// <summary>
+    /// Per-user model storage. This is intentionally outside the application
+    /// directory so it remains writable after a normal or MSIX installation.
+    /// </summary>
+    public static string UserModelsDirectory => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "LumaPhoto", "Models");
 
-    public static bool IsInstalled(ModelDescriptor model) => File.Exists(PathFor(model));
+    /// <summary>
+    /// Resolves the active path for a model. A downloaded per-user model takes
+    /// precedence; otherwise the bundled loose model beside the executable is used.
+    /// </summary>
+    public static string PathFor(ModelDescriptor model)
+    {
+        string userPath = UserPathFor(model);
+        return File.Exists(userPath)
+            ? userPath
+            : Path.Combine(BundledModelsDirectory, model.FileName);
+    }
+
+    /// <summary>Absolute destination for a downloaded optional model.</summary>
+    public static string UserPathFor(ModelDescriptor model)
+        => Path.Combine(UserModelsDirectory, model.FileName);
+
+    public static bool IsInstalled(ModelDescriptor model)
+        => File.Exists(UserPathFor(model)) ||
+           File.Exists(Path.Combine(BundledModelsDirectory, model.FileName));
 
     /// <summary>True when a checksum is known, i.e. the model can be offered as a download.</summary>
     public static bool IsDownloadable(ModelDescriptor model) => Sha256.ContainsKey(model.FileName);
 
     /// <summary>
-    /// Downloads <paramref name="model"/> to its <see cref="PathFor"/> location,
+    /// Downloads <paramref name="model"/> to the writable per-user model location,
     /// reporting integer % progress (0–100).
     ///
     /// Downloads to a <c>.part</c> file, verifies SHA-256, and only then moves it
@@ -85,12 +109,12 @@ public static class ModelDownloader
     {
         if (IsInstalled(model)) return DownloadResult.AlreadyPresent;
 
-        string dest = PathFor(model);
+        string dest = UserPathFor(model);
         string part = dest + ".part";
 
         try
         {
-            Directory.CreateDirectory(ModelsDirectory);
+            Directory.CreateDirectory(UserModelsDirectory);
 
             using (var response = await _http
                 .GetAsync(RembgRelease + model.FileName, HttpCompletionOption.ResponseHeadersRead, ct)

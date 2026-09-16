@@ -2,7 +2,7 @@
 
 ---
 
-## Unreleased
+## v1.5 (unreleased)
 
 ### Fixes
 
@@ -13,20 +13,26 @@
   `U2NetBackgroundRemover` and `NeuralEnhancer` now wait for any in-flight inference
   to finish before disposing their sessions.
 
-### Store build
+### Licence-clean build
 
-- **New `-p:StoreBuild=true` publish variant** for selling the app (Microsoft Store
-  or otherwise). It omits the `fivek_expert_*.onnx` models — trained in part on
-  PPR10K, which licenses non-commercial use only, including of derived weights —
-  and compiles out the self-updater, which downloads and silently launches an
+- **New `-p:StoreBuild=true` publish variant.** It omits the
+  `fivek_expert_*.onnx` models — trained in part on PPR10K, which licenses
+  non-commercial use only, including of derived weights — and compiles out
+  the self-updater, which downloads and silently launches an
   installer, something Microsoft Store Policy 10.2.5 doesn't allow for a packaged
   app. Auto Enhance falls back to the rule-based path when the FiveK models are
-  absent; everything else is unchanged. See `DEVELOPMENT.md` → "Store build."
-- **`pack-msix.bat`** packages the Store build as an MSIX (`LumaPhoto.msix`), ready
-  for Partner Center once the placeholder `Identity` in `Package\AppxManifest.xml`
-  is replaced with a reserved app name. Fetches `makeappx.exe` itself via NuGet —
-  no Visual Studio packaging workload or Windows SDK install required. See
+  absent; everything else is unchanged. See `DEVELOPMENT.md` → "Licence-clean build."
+- **`pack-msix.bat`** packages that build as an MSIX (`LumaPhoto.msix`). The
+  `Identity` in `Package\AppxManifest.xml` is a placeholder until a real app name
+  is reserved. Fetches `makeappx.exe` itself via NuGet — no Visual Studio
+  packaging workload or Windows SDK install required. See
   `DEVELOPMENT.md` → "MSIX packaging."
+- **`build-clean-installer.bat`** builds an Inno Setup installer from that payload,
+  with a verification gate that fails the build if any research-trained model file
+  leaks into it — even when a developer has them locally. The package carries
+  `THIRD_PARTY_NOTICES.txt`.
+- **`build-portable.bat`** creates the same FiveK-free payload as a portable ZIP,
+  without requiring Inno Setup or MSIX.
 
 ### Remove Background
 
@@ -41,6 +47,9 @@
   the Remove Background button fetches the 176 MB human-segmentation model on demand,
   with progress, and switches to it immediately. The installer stays ~5 MB — the
   heavier weights are only downloaded by users who want them.
+- Downloaded or manually added optional models now live in the current user's
+  `%LOCALAPPDATA%\LumaPhoto\Models` folder rather than the installation directory,
+  so the feature works from Program Files and MSIX installations.
 - The "model not installed" message no longer names `u2netp.onnx` specifically, since
   any supported model now satisfies the requirement.
 

@@ -82,7 +82,7 @@ public struct SceneWeights
 }
 
 /// <summary>
-/// Neural enhancement back-end with two operating modes:
+/// Neural enhancement back-end with two operating modes in regular builds:
 ///
 /// Mode 1 — Direct Parameter Prediction (preferred, higher quality):
 ///   Requires "enhancer_params.onnx" next to the exe.
@@ -99,11 +99,13 @@ public struct SceneWeights
 /// </summary>
 public sealed class NeuralEnhancer : IDisposable
 {
+#if !STORE_BUILD
     // ── Mode 1: direct parameter prediction ──────────────────────────────────
     private InferenceSession? _paramSession;
     private string?           _paramInputName;
     private readonly Dictionary<string, (InferenceSession session, string inputName)> _expertParamSessions =
         new(StringComparer.OrdinalIgnoreCase);
+#endif
 
     // ── Mode 2: Places365 scene classification ────────────────────────────────
     private InferenceSession? _sceneSession;
@@ -132,22 +134,32 @@ public sealed class NeuralEnhancer : IDisposable
     internal string LoadError  { get; private set; } = "";
 
     /// <summary>True when the trained parameter-prediction model is loaded.</summary>
+#if !STORE_BUILD
     public bool HasParamModel => _paramSession != null || _expertParamSessions.Count > 0;
+#else
+    public bool HasParamModel => false;
+#endif
 
     /// <summary>True when the dramatic, natural, and bright FiveK endpoints are all loaded.</summary>
+#if !STORE_BUILD
     public bool HasExpertModels =>
         _expertParamSessions.ContainsKey("e") &&
         _expertParamSessions.ContainsKey("c") &&
         _expertParamSessions.ContainsKey("a");
+#else
+    public bool HasExpertModels => false;
+#endif
 
     internal string ModelStatus
     {
         get
         {
+#if !STORE_BUILD
             if (HasExpertModels) return "FiveK E/C/A";
             if (_expertParamSessions.ContainsKey("c")) return "FiveK C";
             if (_expertParamSessions.Count > 0) return "FiveK partial";
             if (_paramSession != null) return "Single ONNX";
+#endif
             if (_sceneSession != null && _labels != null) return "Scene classifier";
             return "Rules only";
         }
@@ -162,6 +174,7 @@ public sealed class NeuralEnhancer : IDisposable
         // report different base paths depending on how .NET extracts them.
         var dir = FindModelDir();
 
+#if !STORE_BUILD
         TryLoadExpertParamModel(dir, "e", "fivek_expert_e.onnx");
         TryLoadExpertParamModel(dir, "c", "fivek_expert_c.onnx");
         TryLoadExpertParamModel(dir, "a", "fivek_expert_a.onnx");
@@ -182,6 +195,7 @@ public sealed class NeuralEnhancer : IDisposable
                 _paramSession = null;
             }
         }
+#endif
 
         // ── Fallback: Places365 scene classifier ──────────────────────────────
         if (!HasParamModel)
@@ -206,6 +220,7 @@ public sealed class NeuralEnhancer : IDisposable
         }
     }
 
+#if !STORE_BUILD
     private void TryLoadExpertParamModel(string dir, string expert, string fileName)
     {
         var paramPath = Path.Combine(dir, fileName);
@@ -257,9 +272,11 @@ public sealed class NeuralEnhancer : IDisposable
             return false;
         }
     }
+#endif
 
     // ── Public API ────────────────────────────────────────────────────────────
 
+#if !STORE_BUILD
     /// <summary>
     /// Mode 1: run the trained model and return enhancement parameters directly.
     /// Runs inference on the full image and a center 80% crop, then averages the
@@ -347,6 +364,7 @@ public sealed class NeuralEnhancer : IDisposable
         var raw = results[0].AsEnumerable<float>().ToArray();
         return raw.Length >= NumParams ? RawToState(raw) : null;
     }
+#endif
 
     /// <summary>
     /// Mode 2: run Places365 scene classification and return scene confidence weights.
@@ -495,9 +513,13 @@ public sealed class NeuralEnhancer : IDisposable
         foreach (var c in candidates)
         {
             if (string.IsNullOrEmpty(c)) continue;
+#if !STORE_BUILD
             if (File.Exists(Path.Combine(c, "enhancer_params.onnx")) ||
                 File.Exists(Path.Combine(c, "fivek_expert_c.onnx")) ||
                 File.Exists(Path.Combine(c, "places365_mobilenet.onnx")))
+#else
+            if (File.Exists(Path.Combine(c, "places365_mobilenet.onnx")))
+#endif
             {
                 SearchDir = c;
                 return c;
@@ -521,9 +543,11 @@ public sealed class NeuralEnhancer : IDisposable
         _gate.Wait();
         try
         {
+#if !STORE_BUILD
             _paramSession?.Dispose();
             foreach (var entry in _expertParamSessions.Values)
                 entry.session.Dispose();
+#endif
             _sceneSession?.Dispose();
         }
         finally { _gate.Release(); }

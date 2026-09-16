@@ -2,12 +2,24 @@
 ; Download Inno Setup free from: https://jrsoftware.org/isinfo.php
 ; Then open this file in Inno Setup Compiler and click Build > Compile
 
-#define MyAppName    "LumaPhoto"
-#define MyAppVersion "1.4"
-#define MyAppPublisher "LumaPhoto"
-#define MyAppURL     "https://github.com/janidudasith-cyber/LumaPhoto"
-#define MyAppExe     "LumaPhoto.exe"
-#define SourceDir    "publish"
+#ifndef MyAppName
+  #define MyAppName "LumaPhoto"
+#endif
+#ifndef MyAppVersion
+  #define MyAppVersion "1.5"
+#endif
+#ifndef MyAppPublisher
+  #define MyAppPublisher "LumaPhoto"
+#endif
+#ifndef MyAppURL
+  #define MyAppURL ""
+#endif
+#ifndef MyAppExe
+  #define MyAppExe "LumaPhoto.exe"
+#endif
+#ifndef BuildOutputDir
+  #define BuildOutputDir "publish"
+#endif
 
 [Setup]
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
@@ -42,31 +54,20 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "{#SourceDir}\{#MyAppExe}";         DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BuildOutputDir}\{#MyAppExe}";    DestDir: "{app}"; Flags: ignoreversion
 ; Background-removal model. Only the ~5 MB lite model ships; the heavier
 ; group-photo / hair models are an in-app on-demand download (ModelDownloader)
-; into this same folder, where EnsureRemover() auto-selects the best one present.
+; into the current user's LocalAppData folder, where EnsureRemover() auto-selects
+; the best one present.
 ; Kept a loose file (not bundled into the single-file exe) so
 ; AppContext.BaseDirectory resolution finds it at Assets\Models.
-#if FileExists(SourceDir + "\Assets\Models\u2netp.onnx")
-Source: "{#SourceDir}\Assets\Models\u2netp.onnx"; DestDir: "{app}\Assets\Models"; Flags: ignoreversion
+#if FileExists(BuildOutputDir + "\Assets\Models\u2netp.onnx")
+Source: "{#BuildOutputDir}\Assets\Models\u2netp.onnx"; DestDir: "{app}\Assets\Models"; Flags: ignoreversion
 #endif
-#if FileExists(SourceDir + "\enhancer_params.onnx") && FileExists(SourceDir + "\enhancer_params.json")
-Source: "{#SourceDir}\enhancer_params.onnx"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceDir}\enhancer_params.json"; DestDir: "{app}"; Flags: ignoreversion
-#endif
-#if FileExists(SourceDir + "\fivek_expert_c.onnx") && FileExists(SourceDir + "\fivek_expert_c.json")
-Source: "{#SourceDir}\fivek_expert_c.onnx"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceDir}\fivek_expert_c.json"; DestDir: "{app}"; Flags: ignoreversion
-#endif
-#if FileExists(SourceDir + "\fivek_expert_a.onnx") && FileExists(SourceDir + "\fivek_expert_a.json")
-Source: "{#SourceDir}\fivek_expert_a.onnx"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceDir}\fivek_expert_a.json"; DestDir: "{app}"; Flags: ignoreversion
-#endif
-#if FileExists(SourceDir + "\fivek_expert_e.onnx") && FileExists(SourceDir + "\fivek_expert_e.json")
-Source: "{#SourceDir}\fivek_expert_e.onnx"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceDir}\fivek_expert_e.json"; DestDir: "{app}"; Flags: ignoreversion
-#endif
+; FiveK/PPR10K-trained enhancement weights are intentionally never included in
+; an installer. Their training-data rights cover research use only.
+; The licence-clean build also compiles out their loader paths.
+Source: "THIRD_PARTY_NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}";       Filename: "{app}\{#MyAppExe}"

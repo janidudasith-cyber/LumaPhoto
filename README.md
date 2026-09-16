@@ -86,7 +86,7 @@ the human-segmentation model masks everyone in frame.
 
 The best model present is selected automatically at launch, and the active model and
 execution provider are shown under the button. Advanced users can drop other
-supported `.onnx` files into `Assets\Models` beside the exe — see
+supported `.onnx` files into `%LOCALAPPDATA%\LumaPhoto\Models` — see
 [`LumaPhoto.Vision/Assets/Models/README.md`](LumaPhoto.Vision/Assets/Models/README.md).
 
 ## Performance

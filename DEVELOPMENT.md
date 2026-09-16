@@ -19,10 +19,10 @@ dotnet run --project LumaPhoto\LumaPhoto.csproj
 
 There are no automated tests in the repo.
 
-### Store build
+### Licence-clean build
 
-`-p:StoreBuild=true` produces the variant meant for sale (Microsoft Store or
-any other paid channel):
+`-p:StoreBuild=true` produces the FiveK-free variant — the build to use for any
+distribution where the research-trained models must not ship:
 ```
 dotnet publish LumaPhoto\LumaPhoto.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:StoreBuild=true -o publish-store
 ```
@@ -30,9 +30,8 @@ Two things differ from the normal build, both compiled out rather than merely
 disabled at runtime — confirmed by checking the published binary for the
 relevant symbols, not just by reading the source:
 
-- **No `fivek_expert_*.onnx`.** `PPR10K` — the primary dataset behind those
-  models (see `fivek_expert_*.json`) — licenses non-commercial use only and
-  explicitly extends that to "derived data," i.e. weights trained on it.
+- **No `fivek_expert_*.onnx`.** Those models were trained with research-only
+  image datasets and are excluded outright. Do not add them back into this build.
   `NeuralEnhancer` degrades to the rule-based `ComputeAutoParams` when these
   files are absent, so Auto Enhance still works — just without the neural
   blend. `MIT-Adobe FiveK`'s own terms haven't been independently verified
@@ -45,8 +44,9 @@ relevant symbols, not just by reading the source:
   the Store; the GitHub-release-polling, silent-installer-launching flow this
   app otherwise ships with is exactly what that forbids.
 
-Everything else — background removal (Apache-2.0 U²-Net weights), filters,
-collage, markup, EXIF display — is identical between builds.
+Everything else — background removal, filters, collage, markup, and EXIF
+display — is identical between builds. Review THIRD_PARTY_NOTICES.txt before
+shipping a new package; it records the included model provenance.
 
 ### MSIX packaging
 
@@ -95,14 +95,32 @@ rather than via a script):
 
 ## Installer
 
-`installer.iss` — Inno Setup script at the repo root. Open in Inno Setup Compiler and press F9 to build.
-Output: `installer_output\LumaPhoto-Setup-v{version}.exe` — a standard Windows installer (Program Files entry, Start Menu shortcut, uninstaller). Bump `MyAppVersion` in `installer.iss` and `AppVersion.Current` together.
-Bundles `publish\LumaPhoto.exe`, `Assets\Models\u2netp.onnx`, and whichever enhancer/FiveK models are present — each `[Files]` entry is guarded by `#if FileExists`, so a missing optional model is skipped rather than failing the compile.
+`installer.iss` — Inno Setup script at the repo root. For the licence-clean build,
+run `build-clean-installer.bat`. It publishes with `StoreBuild=true`, verifies the
+FiveK models are absent, and compiles
+`installer_output\LumaPhoto-Setup-v{version}.exe` — a standard Windows
+installer with a Start Menu shortcut and uninstaller. Bump `MyAppVersion` in
+`installer.iss` and `AppVersion.Current` together.
+
+The installer script never packages the research-trained enhancement models,
+even if they are present in a normal `publish` output. The licence-clean build
+uses `publish-clean`, bundles the lite background-removal model and
+THIRD_PARTY_NOTICES.txt, and deliberately excludes FiveK models and the
+GitHub self-updater from both its payload and compiled code.
 The `SetupIconFile` points to `LumaPhoto\LumaPhoto.ico` (not the exe — extracting from a 167 MB single-file exe causes a compile error).
 
 **Only the ~4.7 MB lite background-removal model ships.** The larger models are an
 in-app download (`ModelDownloader`); bundling them would have taken the installer from
 ~5 MB to ~360 MB for a feature most users never open.
+
+### Portable ZIP (no installer)
+
+`build-portable.bat` produces `portable_output\LumaPhoto-Portable.zip` for direct
+download. It uses the same FiveK-free compilation but does not use Inno Setup or
+MSIX. The ZIP contains only the application, its lite background-removal model,
+third-party notices, and a short extraction guide. Users extract it and run `LumaPhoto.exe`; updates are
+delivered as a new ZIP. Sign the executable before public distribution to reduce
+Windows SmartScreen warnings.
 
 ## Training Pipeline (Python)
 
@@ -177,7 +195,7 @@ Local ONNX background removal, referenced by the WPF app via `ProjectReference`.
 `EnsureRemover()` in `BackgroundRemoval.cs` picks the best model **present on disk**,
 in `BgModelPreference` order: IS-Net → U²-Net Human → U²-Net Full → U²-Net Lite.
 Only the lite model ships; the human-seg model is downloaded in-app on demand and
-the other two can be dropped into `Assets\Models` by hand.
+the other two can be dropped into `%LOCALAPPDATA%\LumaPhoto\Models` by hand.
 
 Adding a model means adding a `ModelDescriptor` (input size and normalisation
 constants are per-model and getting them wrong yields a plausible-looking but subtly
@@ -185,7 +203,10 @@ bad mask) and, if it should be downloadable, its SHA-256 to `ModelDownloader`.
 `.onnx` files are git-ignored — see `LumaPhoto.Vision/Assets/Models/README.md`.
 
 Models are excluded from the single-file bundle (`ExcludeFromSingleFile`) so
-`AppContext.BaseDirectory` resolution works, and land in `{app}\Assets\Models`.
+the bundled lite model can be resolved from `{app}\Assets\Models`. Downloaded
+and manually installed optional models live under the current user's
+`%LOCALAPPDATA%\LumaPhoto\Models` folder, so they remain writable after a
+Program Files or MSIX installation.
 
 **Keep the big models out of `LumaPhoto.Vision/Assets/Models/` during development.**
 The csproj copies that folder into every build output, so two 176 MB models there
@@ -257,10 +278,15 @@ ImageSharp was removed. The app is commercially safe with no paid license requir
 
 `NeuralEnhancer` is loaded in a background `Task` at startup so the window opens immediately. It is disposed in `MainWindow.Closed`.
 
-### GitHub / distribution
+### Distribution
 
-- Source code on GitHub (C#, Python, scripts) — `.gitignore` excludes `publish/`, `bin/`, `obj/`, `installer_output/`, `.models-cache/`, `*.onnx`, `*.pt`, datasets
-- Installer distributed via GitHub Releases as a binary attachment (`LumaPhoto-Setup-v{version}.exe`)
-- `UpdateChecker` reads the GitHub Releases API on startup and offers a silent in-place update; it needs the release to carry an `.exe` asset, otherwise it just opens the releases page
-- Trained model (`enhancer_params.onnx`) stored on Google Drive — download and place next to exe after training
-- Background-removal weights come from the `danielgatis/rembg` releases at runtime, not from this repo
+- Keep source and build artifacts separate. `.gitignore` excludes `publish/`,
+  `bin/`, `obj/`, `installer_output/`, `.models-cache/`, `*.onnx`, `*.pt`, and
+  datasets.
+- For distribution outside GitHub Releases, use `build-clean-installer.bat` or
+  `build-portable.bat`. Neither carries the GitHub self-updater, so new versions
+  have to be published to whichever channel you used.
+- Do not distribute the FiveK/PPR10K-trained `enhancer_params.onnx` or
+  `fivek_expert_*.onnx` files. The licence-clean build already excludes them.
+- Background-removal weights are sourced from the `danielgatis/rembg` releases
+  at runtime; keep their provenance and notices in the shipped package.

@@ -10,9 +10,9 @@
     <Optimize>true</Optimize>
 
     <ApplicationIcon>LumaPhoto.ico</ApplicationIcon>
-    <Version>1.4.0</Version>
-    <AssemblyVersion>1.4.0.0</AssemblyVersion>
-    <FileVersion>1.4.0.0</FileVersion>
+    <Version>1.5.0</Version>
+    <AssemblyVersion>1.5.0.0</AssemblyVersion>
+    <FileVersion>1.5.0.0</FileVersion>
     <ProductName>LumaPhoto</ProductName>
     <Copyright>© 2026 LumaPhoto</Copyright>
     <PublishSingleFile>true</PublishSingleFile>
@@ -20,7 +20,7 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
-    <!-- StoreBuild=true produces the sellable variant: no FiveK/PPR10K-trained
+    <!-- StoreBuild=true produces the licence-clean variant: no FiveK/PPR10K-trained
          enhancer models (PPR10K's license bars commercial use of "derived
          data", i.e. weights trained on it — see LumaPhoto/fivek_expert_*.json,
          which name the training profile), and no self-updater (Microsoft Store

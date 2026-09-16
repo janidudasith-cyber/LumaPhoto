@@ -27,7 +27,8 @@ public partial class MainWindow
     // Best model first. The general U²-Net variants are salient-object detectors
     // and tend to keep only the most prominent person in a group photo; the
     // human-seg variant masks everyone in frame. The installer includes u2netp;
-    // optional models are discovered automatically from Assets\Models.
+    // optional models are discovered automatically from per-user app data first,
+    // then from the bundled Assets\Models folder.
     private static readonly ModelDescriptor[] BgModelPreference =
     {
         ModelDescriptor.IsNet,          // best overall quality, if user installed it
@@ -38,7 +39,8 @@ public partial class MainWindow
 
     /// <summary>
     /// Creates the remover on first use, choosing the best model file present in
-    /// Assets\Models, and warms the ONNX session in the background.
+    /// per-user app data or the bundled Assets\Models folder, and warms the ONNX
+    /// session in the background.
     /// Returns null when no model file is found.
     /// </summary>
     private IBackgroundRemover? EnsureRemover()
@@ -88,8 +90,8 @@ public partial class MainWindow
         {
             RemoveBgStatus.Text = "Model not installed.";
             ShowToast("Background Removal Unavailable",
-                "No background-removal model was found next to the app. Reinstall LumaPhoto, or place " +
-                "a supported .onnx model in an Assets\\Models folder beside LumaPhoto.exe.", success: false);
+                "No background-removal model was found. Reinstall LumaPhoto, or place a supported .onnx " +
+                $"file in {ModelDownloader.UserModelsDirectory}.", success: false);
             return;
         }
 

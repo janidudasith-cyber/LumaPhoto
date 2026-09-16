@@ -6,6 +6,6 @@ namespace LumaPhoto;
 /// </summary>
 public static class AppVersion
 {
-    public const string Current    = "1.4";
+    public const string Current    = "1.5";
     public const string GitHubRepo = "janidudasith-cyber/LumaPhoto";
 }

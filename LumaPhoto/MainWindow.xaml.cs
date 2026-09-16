@@ -1457,6 +1457,7 @@ public partial class MainWindow : Window
         var analysis = _autoAnalysis;
         var enhancer = _neuralEnhancer;
 
+#if !STORE_BUILD
         if (enhancer?.HasExpertModels == true)
         {
             var expertParams = await Task.Run(() => new
@@ -1518,6 +1519,7 @@ public partial class MainWindow : Window
             });
             return;
         }
+#endif
 
         var weights = await Task.Run(() => enhancer?.Analyze(pixels, w, h));
 

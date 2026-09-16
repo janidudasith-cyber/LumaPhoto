@@ -5,6 +5,7 @@ publish/
 publish_*/
 publish-*/
 installer_output/
+portable_output/
 
 # MSIX packaging (see DEVELOPMENT.md -> "MSIX packaging"). Package/AppxManifest.xml
 # and Package/Assets/*.png are hand-authored source and stay tracked; the payload
